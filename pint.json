@@ -1,0 +1,8 @@
+{
+    "preset": "laravel",
+    "notPath": [
+        "bootstrap/cache",
+        "storage",
+        "vendor"
+    ]
+}

@@ -25,3 +25,14 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# SISLAC
+/.phpstan-cache
+/.pint-cache
+/.pest-cache
+/docker/postgres/data
+/docker/redis/data
+/storage/app/tenants
+/storage/pdfs
+*.local.php
+*.local.json

@@ -99,6 +99,53 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        /*
+        |------------------------------------------------------------------
+        | SISLAC — banco CENTRAL (tenants, usuários, vínculos, planos)
+        |------------------------------------------------------------------
+        | É a conexão padrão da aplicação (DB_CONNECTION=central). Só os
+        | models de plataforma (app/Platform) apontam para ela explicitamente.
+        */
+
+        'central' => [
+            'driver' => 'pgsql',
+            'url' => env('DB_URL'),
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '5432'),
+            'database' => env('DB_DATABASE', 'sislac_central'),
+            'username' => env('DB_USERNAME', 'sislac_app'),
+            'password' => env('DB_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_SSLMODE', 'prefer'),
+        ],
+
+        /*
+        |------------------------------------------------------------------
+        | SISLAC — conexão de TENANT (um banco por laboratório)
+        |------------------------------------------------------------------
+        | Molde: o `database` fica vazio aqui e é definido em runtime pelo
+        | middleware de tenancy (Fase 1) a partir do laboratório da requisição
+        | (sislac_t_1001, sislac_t_1002, ...). Nunca use esta conexão
+        | diretamente fora do middleware.
+        */
+
+        'tenant' => [
+            'driver' => 'pgsql',
+            'host' => env('TENANT_DB_HOST', env('DB_HOST', '127.0.0.1')),
+            'port' => env('TENANT_DB_PORT', env('DB_PORT', '5432')),
+            'database' => null,
+            'username' => env('TENANT_DB_USERNAME', env('DB_USERNAME', 'sislac_app')),
+            'password' => env('TENANT_DB_PASSWORD', env('DB_PASSWORD', '')),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_SSLMODE', 'prefer'),
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

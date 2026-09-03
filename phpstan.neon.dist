@@ -1,0 +1,20 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - app
+        - config
+        - database
+        - routes
+        - tests
+
+    level: 8
+
+    ignoreErrors:
+        # Deixe esta lista vazia por padrão. Só ignore erro específico com
+        # justificativa em comentário logo acima, e revisite a cada trimestre.
+
+    excludePaths:
+        analyseAndScan:
+            - database/migrations/*/tenant/*

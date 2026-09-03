@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main, fase-*]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Pint · Larastan · Pest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sislac_app
+          POSTGRES_PASSWORD: sislac_ci
+          POSTGRES_DB: sislac_central
+        options: >-
+          --health-cmd="pg_isready -U sislac_app"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+        ports:
+          - 6379:6379
+
+    # Os testes rodam contra o Postgres do serviço acima (a conexão `central`),
+    # não contra SQLite: é o mesmo motor da produção. As variáveis do sistema
+    # têm prioridade sobre o phpunit.xml e sobre o .env.
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: central
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: sislac_central
+      DB_USERNAME: sislac_app
+      DB_PASSWORD: sislac_ci
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql, pgsql, redis, intl, bcmath, gd, zip, mbstring, opcache, pcntl
+          coverage: none
+          tools: composer:v2
+
+      - name: Diretório de cache do Composer
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache do Composer
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: Dependências
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Ambiente
+        run: |
+          cp .env.example .env
+          php artisan key:generate --ansi
+
+      - name: Pint — formatação
+        run: vendor/bin/pint --test
+
+      - name: Larastan — análise estática
+        run: |
+          if [ -x vendor/bin/phpstan ]; then
+            vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+          else
+            echo "::warning::Larastan ainda não instalado — rode: composer require --dev larastan/larastan"
+          fi
+
+      - name: Pest — testes
+        run: vendor/bin/pest --parallel --colors=always
+
+  guards:
+    name: Guards de repositório
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: ripgrep
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+      - name: Fronteira Platform ↔ Domain
+        run: bash scripts/check-no-central-in-tenant.sh
+      - name: Nenhum arquivo acima de 500 KiB
+        run: bash scripts/check-file-size.sh
+      - name: Nenhum .env comitado
+        run: |
+          if git ls-files | grep -E '(^|/)\.env(\.|$)' | grep -v '\.env\.example$'; then
+            echo "::error::Arquivo .env comitado. Só o .env.example pode ir para o repositório."
+            exit 1
+          fi
+          echo "OK — nenhum .env no repositório."

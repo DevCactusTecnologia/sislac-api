@@ -1,58 +1,105 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# SISLAC — API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Backend do SISLAC (sistema de gestão para laboratórios de análises clínicas) em
+**Laravel 13 / PHP 8.4** sobre **PostgreSQL**, com Redis, filas, WebSocket e
+geração de laudos em PDF. Multi-tenant no modelo **um banco por laboratório**,
+todos os clientes no mesmo endereço (`sislac.com.br`), um único deploy — ver
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) e o ADR‑001.
 
-## About Laravel
+Este repositório é a **Fase 0**: fundação (esqueleto, Docker, CI, docs, health
+check). O código de domínio entra nas fases seguintes.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Rodar no PC (Windows + Laravel Herd)
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Pré-requisitos: [Laravel Herd](https://herd.laravel.com) (PHP 8.4 + Composer) e
+um PostgreSQL 16 local — o mais simples é o do Docker Desktop, via compose:
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+```powershell
+composer install
+copy .env.example .env
+php artisan key:generate
 
-## Learning Laravel
+# Banco + Redis + pgAdmin locais (Docker Desktop). A senha do papel sislac_app
+# vem de DB_PASSWORD no .env — troque antes de subir pela primeira vez.
+docker compose up -d postgres redis pgadmin
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+php artisan migrate
+```
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+Sem Docker: instale o PostgreSQL 16 para Windows, crie o papel `sislac_app` e o
+banco `sislac_central` (o SQL está em
+[docker/postgres/init/01-create-central.sql](docker/postgres/init/01-create-central.sql))
+e aponte o `.env` para ele.
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+Abra `http://sislac-api.test/api/health` (Herd usa o nome da pasta do projeto)
+ou rode `php artisan serve` e use `http://127.0.0.1:8000/api/health`. Resposta
+esperada:
 
-## Agentic Development
+```json
+{ "app": "SISLAC", "env": "local", "time": "...", "database": { "connection": "central", "status": "ok" } }
+```
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+- pgAdmin local: <http://localhost:5050> (`PGADMIN_EMAIL` / `PGADMIN_PASSWORD` do `.env`).
+- DBeaver / TablePlus: [docs/CONECTAR_DBEAVER.md](docs/CONECTAR_DBEAVER.md).
 
-```bash
-composer require laravel/boost --dev
+## Qualidade
 
+```powershell
+vendor\bin\pint --test        # formatação (preset laravel)
+vendor\bin\pest               # testes
+vendor\bin\phpstan analyse    # análise estática (depois de instalar o Larastan)
+```
+
+O CI (GitHub Actions) roda Pint, Larastan e Pest contra um PostgreSQL 16 real,
+mais os guards de repositório (`scripts/`): fronteira Platform ↔ Domain, nenhum
+arquivo acima de 500 KiB, nenhum `.env` comitado. Nada entra em `main` sem
+isso verde.
+
+Para ligar o Larastan (a etapa fica como aviso até então):
+
+```powershell
+composer require --dev larastan/larastan
+```
+
+Recomendado também: [Laravel Boost](https://github.com/laravel/boost), que dá
+ao Claude Code / Cursor acesso à documentação e ao estado real da aplicação:
+
+```powershell
+composer require --dev laravel/boost
 php artisan boost:install
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+## Produção (VPS Hostinger, Ubuntu 24.04)
 
-## Contributing
+Tudo em Docker Compose, portas só em `127.0.0.1`, Nginx público com TLS na
+frente. Passo a passo em [docs/DEPLOY.md](docs/DEPLOY.md); segurança em
+[docs/SEGURANCA.md](docs/SEGURANCA.md); pgAdmin via túnel SSH em
+[docs/PGADMIN.md](docs/PGADMIN.md).
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## Estrutura
 
-## Code of Conduct
+```
+app/
+├─ Platform/        # banco central: tenants, usuários, vínculos, planos (Fase 1)
+├─ Domain/          # regras do laboratório: pacientes, atendimentos, exames (Fase 3)
+└─ Http/Controllers # HealthController hoje; Platform/ e Tenant/ nas próximas fases
+config/database.php # conexões `central` (padrão) e `tenant` (molde, preenchida em runtime)
+docker/             # PHP-FPM 8.4, Nginx, init do Postgres
+docs/               # arquitetura, deploy, segurança, ferramentas de banco
+scripts/            # guards executados no CI
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Fases
 
-## Security Vulnerabilities
+| Fase | Escopo | Estado |
+|------|--------|--------|
+| 0 | Laravel + Docker + CI + docs + health check | **concluída** |
+| 1 | Banco central, tenancy multi-database (`stancl/tenancy`), Sanctum, super-admin (Filament), provisionamento | próxima |
+| 2 | PDF (Chromium), WhatsApp Cloud API, integrações de apoio, Horizon/Reverb | pendente |
+| 3 | Endpoints de domínio; front Lovable passa a consumir esta API | pendente |
+| 4 | Migração dos dados do Supabase e corte | pendente |
+| 5 | SaaS comercial (self-service, planos, cobrança) | pendente |
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Licença
 
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Privado. Uso interno da Devcactus Tecnologia.
