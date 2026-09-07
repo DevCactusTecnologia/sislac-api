@@ -89,7 +89,7 @@ it('invalida a sessão no logout', function () {
 
     $this->postJson('/api/auth/logout')->assertNoContent();
 
-    $this->assertGuest();
+    $this->assertGuest('web');
     $this->getJson('/api/auth/session')->assertUnauthorized();
 });
 
