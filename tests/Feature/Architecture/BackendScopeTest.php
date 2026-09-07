@@ -76,7 +76,7 @@ it('não mantém configuração futura sem consumidor na fundação', function (
 it('injeta a senha do usuário da aplicação no bootstrap PostgreSQL sem fallback nulo', function () {
     $bootstrap = file_get_contents(base_path('docker/postgres/init/01-create-central.sql'));
 
-    expect($bootstrap)->toContain("\\set app_password")
+    expect($bootstrap)->toContain('\\set app_password')
         ->and($bootstrap)->toContain(":'app_password'")
         ->and($bootstrap)->not->toContain("current_setting('SISLAC_APP_PASSWORD'");
 });
