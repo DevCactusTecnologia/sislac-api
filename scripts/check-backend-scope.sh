@@ -59,6 +59,14 @@ if grep -q 'pecl install redis' docker/php/Dockerfile; then
   fail "Extensão de infraestrutura instalada sem consumidor runtime."
 fi
 
+if grep -Eq 'Inspiring|Artisan::command\(.inspire' routes/console.php; then
+  fail "Comando de exemplo do Laravel reapareceu."
+fi
+
+for scaffold in tests/Unit/ExampleTest.php database/migrations/tenant/.gitkeep public/favicon.ico; do
+  [ ! -e "$scaffold" ] || fail "Arquivo de scaffold sem função reapareceu: $scaffold"
+done
+
 if grep -R -nE "DB::connection\(['\"]supabase_source['\"]\)" app --include='*.php' \
   | grep -v '^app/Platform/Supabase/SupabaseSource.php:'; then
   fail "supabase_source só pode ser aberto por App\\Platform\\Supabase\\SupabaseSource."
