@@ -34,14 +34,13 @@ externos ou automações que realmente necessitem de API tokens.
 | Conexão | Finalidade |
 |---|---|
 | `central` | usuários, tenants, memberships, planos, assinaturas e provisionamento |
-| `tenant` | molde temporário atual para banco de laboratório durante a Fase 1A |
+| `tenant_template` | configuração-base do PostgreSQL usada pelo `stancl/tenancy` |
+| `tenant` | conexão dinâmica criada e encerrada pelo `stancl/tenancy` em runtime |
 | `sqlite` | somente testes locais rápidos; não faz parte do contrato de produção |
 
-Na Fase 1B, ao instalar oficialmente `stancl/tenancy`, o molde atual será
-renomeado para `tenant_template` antes da configuração do pacote. O nome
-`tenant` ficará reservado à conexão dinâmica gerenciada pelo tenancy package.
-Essa mudança será feita junto da instalação real das dependências e de seus
-testes, nunca antecipadamente.
+O nome `tenant` é reservado à conexão dinâmica gerenciada pelo tenancy package;
+código de negócio não a cria, não a reconfigura e não seleciona banco por conta
+própria.
 
 PostgreSQL é o único banco de produção. MySQL, MariaDB e SQL Server não fazem
 parte do contrato do SISLAC.
@@ -112,32 +111,32 @@ segue uma máquina de estados auditável:
 
 `provisioning → create database → migrations → seed mínimo → smoke check → active`.
 
-Falha não pode produzir tenant parcialmente ativo. Retry precisa ser
-idempotente.
+Falha não produz tenant parcialmente ativo. Retry é idempotente e a criação do
+banco usa advisory lock PostgreSQL para serializar provisionamentos do mesmo
+tenant.
 
 ## Concordância com Supabase
 
-`docs/conformance/supabase-runtime-baseline.json` registra somente metadados da
-baseline: SHA do frontend, versão PostgreSQL, inventário estrutural e findings
-de advisors. Não contém linhas clínicas nem credenciais.
+`docs/contracts/supabase-baseline.json` fixa somente metadados da baseline:
+SHA do frontend, PostgreSQL major, fingerprints dos artefatos geradores,
+inventário estrutural, superfície consumida, storage, Edge Functions, realtime
+e findings conhecidos. Não contém linhas clínicas nem credenciais.
 
-Objetos do backend atual serão classificados somente com evidência em quatro
-categorias:
+O gate `scripts/check-supabase-contract.php` valida integridade e contagens
+determinísticas desse manifesto no CI. Mudança de superfície do frontend exige
+atualização explícita da baseline antes de uma nova onda de migração.
 
-- `required-runtime`;
-- `required-compat`;
-- `platform-specific`;
-- `dead-or-legacy`.
-
-Nenhum objeto é removido ou reescrito apenas porque aparenta estar sem uso.
+Nenhum objeto é removido ou reescrito apenas porque aparenta estar sem uso. A
+classificação de equivalência ocorre por onda de domínio, com evidência do
+contrato executável do frontend/Supabase.
 
 ## Fases
 
 | Fase | Escopo | Estado |
 |---|---|---|
 | 0 | Laravel, Docker, CI, docs e health check | concluída |
-| 1A | PostgreSQL 17, plano central, UUID, constraints e seleção de tenant | em validação final |
-| 1B | Boost, Sanctum, stancl/tenancy, isolamento e provisionamento | próxima |
+| 1A | PostgreSQL 17, plano central, UUID, constraints e seleção de tenant | concluída |
+| 1B | Boost, Sanctum, stancl/tenancy, isolamento e provisionamento | concluída |
 | 2 | PDF, WhatsApp oficial, integrações, Horizon/Reverb | pendente |
 | 3 | endpoints de domínio e adaptação progressiva do frontend | pendente |
 | 4 | migração de dados e corte do Supabase | pendente |
@@ -155,7 +154,7 @@ implementação. O padrão é:
 - Pint;
 - Pest em PostgreSQL 17 real;
 - Composer audit;
-- Larastan nível 8 quando instalado legitimamente na Fase 1B;
+- contrato Supabase ↔ Laravel determinístico;
+- Larastan nível 8 obrigatório;
 - guards de fronteira e PostgreSQL-only;
-- testes de segurança, isolamento, concorrência e performance conforme o fluxo
-  correspondente for habilitado.
+- testes de segurança, isolamento, concorrência, provisionamento e performance.
