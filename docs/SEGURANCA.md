@@ -63,18 +63,23 @@ Casos obrigatórios de regressão:
 - usuário com vários vínculos só entra no tenant explicitamente selecionado e
   autorizado;
 - exceção durante uma requisição não deixa contexto tenant para a seguinte;
-- jobs, cache, filesystem e broadcasting carregam contexto tenant explícito.
+- alternância A → B → A → B no mesmo worker não vaza conexão ou contexto;
+- jobs, cache, filesystem e broadcasting carregam contexto tenant explícito
+  quando esses recursos forem habilitados.
 
 ## Baseline Supabase
 
 O Supabase é referência de comportamento durante a migração, não autoridade
-absoluta de segurança. Findings dos advisors são registrados em
-`docs/conformance/supabase-runtime-baseline.json` e não são copiados para o
-Laravel sem justificativa técnica.
+absoluta de segurança. A superfície observada pelo Laravel está fixada em
+`docs/contracts/supabase-baseline.json`, com SHA do frontend, fingerprints dos
+artefatos geradores, contagens de tabelas/views, RPCs, Edge Functions, buckets
+e canais realtime. O manifesto contém apenas metadados, nunca linhas clínicas.
 
-Em particular, funções privilegiadas, políticas RLS subótimas e índices
-redundantes devem ser substituídos por controles equivalentes ou melhores,
-preservando o resultado funcional esperado.
+Findings conhecidos dos advisors são preservados no manifesto para impedir que
+débitos de segurança ou performance sejam copiados sem revisão. Em particular,
+funções privilegiadas, políticas RLS subótimas e índices redundantes devem ser
+substituídos por controles equivalentes ou melhores, preservando o resultado
+funcional esperado.
 
 ## LGPD e rastreabilidade
 
@@ -84,21 +89,20 @@ preservando o resultado funcional esperado.
 - Trilhas da coleta à liberação permanecem preservadas e cobertas por testes
   de regressão antes do corte de cada módulo.
 
-## Gates atuais do CI
+## Gates automatizados da Fase 1
 
-- `scripts/check-no-central-in-tenant.sh`: preserva a fronteira Platform ↔ Domain.
-- `scripts/check-database-contract.sh`: preserva o contrato PostgreSQL-only.
-- `scripts/check-file-size.sh`: bloqueia arquivos anormalmente grandes.
-- guard de `.env`: bloqueia configuração sensível comitada.
-- Pint e Pest em PostgreSQL 17 real.
-- `composer audit --locked --no-interaction`: bloqueia dependências com
-  vulnerabilidades conhecidas pelo Composer audit.
-
-## Gates da Fase 1B
-
-- autenticação SPA stateful/CSRF;
-- isolamento A/B e proteção contra BOLA/IDOR;
-- membership suspensa e tenant forjado;
-- cleanup determinístico de contexto;
-- rate limiting de autenticação e endpoints públicos;
-- Larastan nível 8 como gate obrigatório após instalação legítima do pacote.
+- `composer audit --locked --no-interaction`: vulnerabilidades conhecidas em
+  dependências PHP.
+- `php scripts/check-supabase-contract.php`: integridade determinística do
+  contrato Supabase ↔ Laravel.
+- `vendor/bin/pint --test`: padrão de código Laravel.
+- `vendor/bin/phpstan analyse --no-progress --memory-limit=1G`: Larastan nível
+  8 obrigatório, sem fallback opcional.
+- `vendor/bin/pest --parallel`: autenticação stateful/CSRF, isolamento A/B,
+  tenant forjado, membership suspensa, cleanup após exceção, provisionamento,
+  mass assignment, payloads inválidos, alternância de contexto e baseline de
+  query-count/performance.
+- `scripts/check-no-central-in-tenant.sh`: fronteira Platform ↔ Domain.
+- `scripts/check-database-contract.sh`: contrato PostgreSQL-only.
+- `scripts/check-file-size.sh`: bloqueio de arquivos anormalmente grandes.
+- guard de `.env`: nenhum segredo ou ambiente preenchido no repositório.
