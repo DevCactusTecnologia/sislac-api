@@ -91,8 +91,8 @@ preservando o resultado funcional esperado.
 - `scripts/check-file-size.sh`: bloqueia arquivos anormalmente grandes.
 - guard de `.env`: bloqueia configuração sensível comitada.
 - Pint e Pest em PostgreSQL 17 real.
-- `composer audit --locked`: auditoria de dependências, quando adicionada ao
-  workflow da Fase 1A.
+- `composer audit --locked --no-interaction`: bloqueia dependências com
+  vulnerabilidades conhecidas pelo Composer audit.
 
 ## Gates da Fase 1B
 
