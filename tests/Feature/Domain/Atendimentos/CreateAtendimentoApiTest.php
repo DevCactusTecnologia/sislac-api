@@ -165,3 +165,99 @@ it('normaliza cpf e ignora campos derivados enviados pelo cliente', function () 
         ->and($row['senha_consulta'])->not->toBe('CLIENTE-NAO-PODE-DEFINIR')
         ->and($row['assinatura_protocolo'])->not->toBe('CLIENTE-NAO-PODE-DEFINIR');
 });
+
+it('persiste exames internos e terceirizados conforme o contrato', function () {
+    $this->actingAs($this->atendimentoUser, 'web');
+
+    $payload = syntheticAtendimentoPayload();
+    $grupo = (string) Str::uuid();
+    $payload['exames'] = [
+        [
+            'nome_exame' => 'Hemograma Sintético',
+            'status' => 'pendente',
+            'valor' => 25.50,
+            'valor_original' => 30.00,
+            'ordem' => 1,
+            'cobranca_destino' => 'paciente',
+            'amostra_seq' => 1,
+            'grupo_exame_id' => $grupo,
+            'tipo_processo' => 'INTERNO',
+        ],
+        [
+            'nome_exame' => 'Exame Apoio Sintético',
+            'status' => 'digitado',
+            'valor' => 48.90,
+            'ordem' => 2,
+            'cobranca_destino' => 'convenio',
+            'convenio_cobranca_id' => 17,
+            'amostra_seq' => 1,
+            'grupo_exame_id' => (string) Str::uuid(),
+            'tipo_processo' => 'TERCEIRIZADO',
+            'lab_apoio_id' => (string) Str::uuid(),
+        ],
+    ];
+
+    $response = $this->postJson('/api/atendimentos', $payload)->assertOk();
+    $atendimentoId = (int) $response->json('atendimento_id');
+
+    $pdo = atendimentoApiControlConnection($this->atendimentoDatabase);
+    $rows = $pdo->query('SELECT nome_exame, status, valor::text, valor_original::text, ordem, cobranca_destino, convenio_cobranca_id, amostra_seq, grupo_exame_id::text, tipo_processo FROM atendimento_exames WHERE atendimento_id = '.$atendimentoId.' ORDER BY ordem')?->fetchAll(PDO::FETCH_ASSOC);
+
+    expect($rows)->toHaveCount(2)
+        ->and($rows[0]['nome_exame'])->toBe('Hemograma Sintético')
+        ->and($rows[0]['status'])->toBe('pendente')
+        ->and($rows[0]['valor'])->toBe('25.50')
+        ->and($rows[0]['valor_original'])->toBe('30.00')
+        ->and((int) $rows[0]['ordem'])->toBe(1)
+        ->and($rows[0]['cobranca_destino'])->toBe('paciente')
+        ->and((int) $rows[0]['amostra_seq'])->toBe(1)
+        ->and($rows[0]['grupo_exame_id'])->toBe($grupo)
+        ->and($rows[0]['tipo_processo'])->toBe('INTERNO')
+        ->and($rows[1]['status'])->toBe('digitado')
+        ->and($rows[1]['valor_original'])->toBe('48.90')
+        ->and($rows[1]['cobranca_destino'])->toBe('convenio')
+        ->and((int) $rows[1]['convenio_cobranca_id'])->toBe(17)
+        ->and($rows[1]['tipo_processo'])->toBe('TERCEIRIZADO');
+});
+
+it('persiste pagamentos válidos e ignora item sem tipo', function () {
+    $this->actingAs($this->atendimentoUser, 'web');
+
+    $payload = syntheticAtendimentoPayload();
+    $payload['pagamentos'] = [
+        ['tipo' => 'PIX', 'valor' => 20.00, 'data' => '2026-09-07T10:00:00-03:00'],
+        ['tipo' => 'Dinheiro', 'valor' => 5.50],
+        ['tipo' => '', 'valor' => 999.00],
+    ];
+
+    $response = $this->postJson('/api/atendimentos', $payload)->assertOk();
+    $atendimentoId = (int) $response->json('atendimento_id');
+
+    $pdo = atendimentoApiControlConnection($this->atendimentoDatabase);
+    $rows = $pdo->query('SELECT tipo, valor::text, status_pagamento FROM atendimento_pagamentos WHERE atendimento_id = '.$atendimentoId.' ORDER BY id')?->fetchAll(PDO::FETCH_ASSOC);
+
+    expect($rows)->toHaveCount(2)
+        ->and($rows[0]['tipo'])->toBe('PIX')
+        ->and($rows[0]['valor'])->toBe('20.00')
+        ->and($rows[0]['status_pagamento'])->toBe('efetuado')
+        ->and($rows[1]['tipo'])->toBe('Dinheiro')
+        ->and($rows[1]['valor'])->toBe('5.50');
+});
+
+it('retorna o mesmo atendimento em repetição sequencial da idempotency key', function () {
+    $this->actingAs($this->atendimentoUser, 'web');
+
+    $payload = syntheticAtendimentoPayload();
+
+    $first = $this->postJson('/api/atendimentos', $payload)->assertOk();
+    $second = $this->postJson('/api/atendimentos', $payload)->assertOk();
+
+    expect($second->json('duplicate'))->toBeTrue()
+        ->and($second->json('atendimento_id'))->toBe($first->json('atendimento_id'))
+        ->and($second->json('protocolo'))->toBe($first->json('protocolo'));
+
+    $pdo = atendimentoApiControlConnection($this->atendimentoDatabase);
+    $count = (int) $pdo->query('SELECT count(*) FROM atendimentos')?->fetchColumn();
+
+    expect($count)->toBe(1);
+});
