@@ -5,6 +5,8 @@
 @section('content')
     <h1>Super Admin</h1>
 
+    <p><a href="{{ route('admin.tenants.index') }}">Laboratórios</a></p>
+
     <dl>
         <div>
             <dt>Laboratórios</dt>
@@ -15,4 +17,9 @@
             <dd>{{ $activeTenants }}</dd>
         </div>
     </dl>
+
+    <form method="POST" action="{{ route('admin.logout') }}">
+        @csrf
+        <button type="submit">Sair</button>
+    </form>
 @endsection
