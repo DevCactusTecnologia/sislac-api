@@ -90,3 +90,15 @@ it('não mantém arquivos ou comandos de scaffold sem função no backend', func
         ->and(file_exists(base_path('database/migrations/tenant/.gitkeep')))->toBeFalse()
         ->and(file_exists(public_path('favicon.ico')))->toBeFalse();
 });
+
+it('não mantém pipeline frontend sem consumidor no Super Admin Blade', function () {
+    $composer = file_get_contents(base_path('composer.json'));
+    $layout = file_get_contents(resource_path('views/admin/layout.blade.php'));
+
+    expect($layout)->not->toContain('@vite')
+        ->and($composer)->not->toContain('npm install')
+        ->and($composer)->not->toContain('npm run build')
+        ->and(file_exists(base_path('package.json')))->toBeFalse()
+        ->and(file_exists(base_path('vite.config.js')))->toBeFalse()
+        ->and(file_exists(resource_path('css/app.css')))->toBeFalse();
+});
