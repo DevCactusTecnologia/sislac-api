@@ -79,7 +79,7 @@ it('ativa o tenant somente depois de criar banco migrar e executar smoke check',
         ->first();
 
     expect($run?->status)->toBe('succeeded')
-        ->and($run?->schema_version)->toBe('2026_09_07_000200_create_atendimentos_tables')
+        ->and($run?->schema_version)->toBe('2026_09_07_000300_add_atendimento_invariants')
         ->and($run?->finished_at)->not->toBeNull();
 
     expect(DB::connection('central')->table('platform_audit')
