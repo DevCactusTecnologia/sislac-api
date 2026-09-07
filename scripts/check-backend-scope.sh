@@ -32,4 +32,9 @@ if grep -q 'pecl install redis' docker/php/Dockerfile; then
   fail "Extensão Redis instalada sem consumidor runtime."
 fi
 
+if grep -R -nE "DB::connection\(['\"]supabase_source['\"]\)" app --include='*.php' \
+  | grep -v '^app/Platform/Supabase/SupabaseSource.php:'; then
+  fail "supabase_source só pode ser aberto por App\\Platform\\Supabase\\SupabaseSource."
+fi
+
 echo "OK — escopo Laravel database-per-lab permanece enxuto e coerente."
