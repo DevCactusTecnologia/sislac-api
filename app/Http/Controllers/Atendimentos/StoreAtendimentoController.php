@@ -8,9 +8,7 @@ use Illuminate\Http\JsonResponse;
 
 final readonly class StoreAtendimentoController
 {
-    public function __construct(private CreateAtendimento $createAtendimento)
-    {
-    }
+    public function __construct(private CreateAtendimento $createAtendimento) {}
 
     public function __invoke(StoreAtendimentoRequest $request): JsonResponse
     {
