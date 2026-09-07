@@ -6,6 +6,7 @@ use App\Domain\Atendimentos\Models\Atendimento;
 use App\Domain\Atendimentos\Models\AtendimentoExame;
 use App\Domain\Atendimentos\Models\AtendimentoPagamento;
 use App\Domain\Atendimentos\Support\AtendimentoProtocolo;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -20,52 +21,72 @@ final readonly class CreateAtendimento
      */
     public function handle(array $payload): array
     {
-        return DB::transaction(function () use ($payload): array {
-            $data = $this->objectValue($payload, 'atendimento');
-            $idempotencyKey = $data['idempotency_key'] ?? null;
+        $data = $this->objectValue($payload, 'atendimento');
+        $idempotencyKey = $data['idempotency_key'] ?? null;
 
+        try {
+            return DB::transaction(function () use ($payload, $data, $idempotencyKey): array {
+                if (is_string($idempotencyKey) && $idempotencyKey !== '') {
+                    $existing = $this->findByIdempotencyKey($idempotencyKey);
+
+                    if ($existing !== null) {
+                        return $this->response($existing, duplicate: true);
+                    }
+                }
+
+                $normalizedData = $data;
+
+                if (! array_key_exists('observacoes_assistente', $normalizedData)
+                    && array_key_exists('observacoes', $normalizedData)) {
+                    $normalizedData['observacoes_assistente'] = $normalizedData['observacoes'];
+                }
+
+                $atendimento = new Atendimento;
+                $atendimento->fill(Arr::only($normalizedData, [
+                    'data',
+                    'paciente_id',
+                    'paciente_nome',
+                    'paciente_cpf',
+                    'paciente_nascimento',
+                    'solicitante',
+                    'convenio_id',
+                    'convenio_nome',
+                    'unidade_id',
+                    'motivo_cancelamento',
+                    'idempotency_key',
+                    'origem_atendimento',
+                    'jejum',
+                    'prioridade_clinica',
+                    'guia_numero',
+                    'observacoes_assistente',
+                ]));
+                $atendimento->forceFill(['protocolo' => $this->protocolos->next()]);
+                $atendimento->save();
+
+                $this->persistExames($atendimento, $this->listValue($payload, 'exames'));
+                $this->persistPagamentos($atendimento, $this->listValue($payload, 'pagamentos'));
+
+                return $this->response($atendimento, duplicate: false);
+            });
+        } catch (UniqueConstraintViolationException $exception) {
             if (is_string($idempotencyKey) && $idempotencyKey !== '') {
-                $existing = Atendimento::query()
-                    ->where('idempotency_key', $idempotencyKey)
-                    ->first();
+                $existing = $this->findByIdempotencyKey($idempotencyKey);
 
                 if ($existing !== null) {
                     return $this->response($existing, duplicate: true);
                 }
             }
 
-            if (! array_key_exists('observacoes_assistente', $data)
-                && array_key_exists('observacoes', $data)) {
-                $data['observacoes_assistente'] = $data['observacoes'];
-            }
+            throw $exception;
+        }
+    }
 
-            $atendimento = new Atendimento;
-            $atendimento->fill(Arr::only($data, [
-                'data',
-                'paciente_id',
-                'paciente_nome',
-                'paciente_cpf',
-                'paciente_nascimento',
-                'solicitante',
-                'convenio_id',
-                'convenio_nome',
-                'unidade_id',
-                'motivo_cancelamento',
-                'idempotency_key',
-                'origem_atendimento',
-                'jejum',
-                'prioridade_clinica',
-                'guia_numero',
-                'observacoes_assistente',
-            ]));
-            $atendimento->forceFill(['protocolo' => $this->protocolos->next()]);
-            $atendimento->save();
-
-            $this->persistExames($atendimento, $this->listValue($payload, 'exames'));
-            $this->persistPagamentos($atendimento, $this->listValue($payload, 'pagamentos'));
-
-            return $this->response($atendimento, duplicate: false);
-        });
+    private function findByIdempotencyKey(string $idempotencyKey): ?Atendimento
+    {
+        return Atendimento::query()
+            ->useWritePdo()
+            ->where('idempotency_key', $idempotencyKey)
+            ->first();
     }
 
     /**
