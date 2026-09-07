@@ -11,7 +11,7 @@ final class ActiveTenantMemberships
      */
     public function forUser(string $userId): array
     {
-        return DB::connection('central')
+        $tenantIds = DB::connection('central')
             ->table('memberships')
             ->join('tenants', 'tenants.id', '=', 'memberships.tenant_id')
             ->where('memberships.user_id', $userId)
@@ -19,7 +19,8 @@ final class ActiveTenantMemberships
             ->where('tenants.status', 'active')
             ->pluck('memberships.tenant_id')
             ->map(static fn ($tenantId): string => (string) $tenantId)
-            ->values()
             ->all();
+
+        return array_values($tenantIds);
     }
 }
