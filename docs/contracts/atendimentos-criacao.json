@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "captured_at": "2026-09-07",
+  "baseline": {
+    "frontend_repository": "DevCactusTecnologia/sislacprivado",
+    "frontend_sha": "0760c6123f3062842eaff5f7304b6460c00c058d",
+    "frontend_source": "src/data/atendimentoStore/mutations.ts",
+    "edge_function_source": "supabase/functions/create-atendimento/index.ts",
+    "supabase_project_ref": "eramenhnqcbyctyiqwlm",
+    "postgres_major": 17
+  },
+  "tables": {
+    "atendimentos": {
+      "primary_key": "id bigint",
+      "creation_columns": {
+        "protocolo": {"type": "text", "nullable": false, "generated_server_side": true, "immutable": true},
+        "data": {"type": "timestamptz", "nullable": false, "default": "now()"},
+        "paciente_id": {"type": "bigint", "nullable": true},
+        "paciente_nome": {"type": "text", "nullable": false},
+        "paciente_cpf": {"type": "text", "nullable": false},
+        "paciente_nascimento": {"type": "date", "nullable": true},
+        "solicitante": {"type": "text", "nullable": false, "default": ""},
+        "convenio_id": {"type": "integer", "nullable": false, "default": 0},
+        "convenio_nome": {"type": "text", "nullable": false, "default": "Particular"},
+        "unidade_id": {"type": "text", "nullable": false, "default": "und-001"},
+        "status_atendimento": {"type": "text", "nullable": false, "default": "Pedido Realizado", "derived": true},
+        "status_pagamento": {"type": "text", "nullable": false, "default": "Pagamento pendente", "derived": true},
+        "motivo_cancelamento": {"type": "text", "nullable": true},
+        "origem_atendimento": {"type": "text", "nullable": false, "default": "INTERNO"},
+        "guia_numero": {"type": "text", "nullable": true},
+        "jejum": {"type": "boolean", "nullable": false, "default": false},
+        "observacoes_assistente": {"type": "text", "nullable": true},
+        "idempotency_key": {"type": "uuid", "nullable": true},
+        "prioridade_clinica": {"type": "text", "nullable": false, "default": "normal"}
+      },
+      "checks": {
+        "origem_atendimento": ["INTERNO", "WEB_AUTO", "WEB_APROVADO", "AGENDAMENTO"],
+        "prioridade_clinica": ["normal", "urgencia", "emergencia"]
+      },
+      "observed_indexes_relevant_to_creation": [
+        "atendimentos_pkey",
+        "atendimentos_protocolo_unique"
+      ],
+      "observed_insert_triggers": [
+        "atendimento_gerar_senha_consulta",
+        "trg_atendimento_assign_protocolo",
+        "trg_atendimento_sign_protocolo",
+        "trg_audit_atendimentos"
+      ],
+      "rls_insert_permission": "criar_atendimento"
+    },
+    "atendimento_exames": {
+      "primary_key": "id bigint",
+      "foreign_key": "atendimento_id -> atendimentos.id ON DELETE CASCADE",
+      "creation_columns": {
+        "nome_exame": {"type": "text", "nullable": false},
+        "exame_id": {"type": "uuid", "nullable": true},
+        "material_id": {"type": "uuid", "nullable": true},
+        "status": {"type": "text", "nullable": false, "default": "pendente"},
+        "valor": {"type": "numeric", "nullable": false, "default": 0},
+        "valor_original": {"type": "numeric", "nullable": true, "fallback": "valor"},
+        "ordem": {"type": "integer", "nullable": false, "default": 0},
+        "cobranca_destino": {"type": "text", "nullable": false, "default": "paciente"},
+        "convenio_cobranca_id": {"type": "integer", "nullable": true},
+        "amostra_seq": {"type": "integer", "nullable": false, "default": 1},
+        "grupo_exame_id": {"type": "uuid", "nullable": false, "default": "gen_random_uuid()"},
+        "tipo_processo": {"type": "text", "nullable": false, "default": "INTERNO"},
+        "lab_apoio_id": {"type": "uuid", "nullable": true},
+        "solicitante": {"type": "text", "nullable": false, "default": ""}
+      },
+      "checks": {
+        "status": ["pendente", "coletado", "em_bancada", "analisado", "em_analise", "digitado", "finalizado", "cancelado"],
+        "tipo_processo": ["INTERNO", "TERCEIRIZADO"],
+        "cobranca_destino": ["paciente", "convenio"]
+      },
+      "unique_occurrence": "(atendimento_id, COALESCE(exame_id::text, lower(nome_exame)), amostra_seq)",
+      "observed_insert_side_effects": [
+        "recompute_atendimento_status",
+        "short_circuit_rotina",
+        "snapshot_regulatorio",
+        "audit_atendimento_exames",
+        "estoque_consumo_exame",
+        "normalize_resultados",
+        "snapshot_exame_terceirizado",
+        "sync_mnemonico"
+      ],
+      "rls_insert_permission": ["criar_atendimento", "editar_atendimento"]
+    },
+    "atendimento_pagamentos": {
+      "primary_key": "id bigint",
+      "foreign_key": "atendimento_id -> atendimentos.id ON DELETE CASCADE",
+      "creation_columns": {
+        "tipo": {"type": "text", "nullable": false},
+        "valor": {"type": "numeric", "nullable": false, "default": 0},
+        "data": {"type": "timestamptz", "nullable": false, "default": "now()"},
+        "observacao": {"type": "text", "nullable": false, "default": ""},
+        "status_pagamento": {"type": "text", "nullable": false, "default": "efetuado"},
+        "caixa_sessao_id": {"type": "bigint", "nullable": true}
+      },
+      "observed_insert_side_effects": [
+        "recompute_atendimento_status",
+        "attach_pagamento_to_caixa",
+        "audit_atendimento_pagamentos",
+        "financeiro_audit",
+        "guard_caixa_sessao_aberta"
+      ],
+      "rls_insert_permission": "registrar_pagamento"
+    }
+  },
+  "protocol": {
+    "generator": "public.generate_protocolo_curto",
+    "counter_table": "public.protocolo_sequence",
+    "prefix_scope": "ATD",
+    "year_scope": 0,
+    "format": "%07d",
+    "example_shape": "0000001",
+    "generated_before_insert": true,
+    "immutable": true,
+    "signature_generated_after_insert": true
+  },
+  "rpc": {
+    "create_atendimento_tx": {
+      "signature": "public.create_atendimento_tx(_atendimento jsonb, _exames jsonb, _pagamentos jsonb)",
+      "permission": "criar_atendimento",
+      "atomic": true,
+      "idempotency_key": "atendimentos.idempotency_key",
+      "duplicate_response": true,
+      "response_keys": ["ok", "duplicate", "protocolo", "atendimento_id", "guia_numero"],
+      "defaults": {
+        "convenio_id": 0,
+        "convenio_nome": "Particular",
+        "unidade_id": "und-001",
+        "origem_atendimento": "INTERNO",
+        "jejum": false,
+        "prioridade_clinica": "normal",
+        "exame_status": "pendente",
+        "exame_valor": 0,
+        "exame_cobranca_destino": "paciente",
+        "exame_amostra_seq": 1,
+        "exame_tipo_processo": "INTERNO",
+        "pagamento_valor": 0
+      }
+    }
+  },
+  "frontend": {
+    "cpf_normalization": "digits_only",
+    "internal_exam_initial_status": "pendente",
+    "third_party_exam_initial_status": "digitado",
+    "exam_order": "index_plus_one",
+    "sample_sequence": "per_exam_identity_incremental",
+    "group_exam_id": "same_for_repeated_exam_identity_in_request",
+    "payment_without_type": "ignored"
+  },
+  "observed_gaps": [
+    {
+      "id": "idempotency_unique_missing",
+      "severity": "correctness",
+      "detail": "O RPC trata unique_violation para idempotency_key, mas o catálogo ativo não possui índice/constraint unique em atendimentos.idempotency_key.",
+      "duplicate_groups_observed": 0,
+      "laravel_resolution": "Adicionar unicidade física em idempotency_key para tornar a garantia concorrente real; não reproduzir a lacuna."
+    }
+  ],
+  "approved_differences": [
+    "O Laravel não expõe create_atendimento_tx como SECURITY DEFINER; autorização ocorre no pipeline HTTP antes da escrita tenant.",
+    "O Laravel adicionará unicidade física de idempotency_key porque o comportamento declarado pelo RPC depende dela e o catálogo Supabase ativo não a possui.",
+    "Triggers Supabase são inventariados como efeitos observados; cada efeito só é considerado migrado quando possuir equivalente executável/testado no Laravel ou for classificado explicitamente como dependência de uma onda posterior."
+  ]
+}
