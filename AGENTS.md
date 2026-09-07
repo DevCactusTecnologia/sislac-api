@@ -9,7 +9,7 @@ Backend em **Laravel 13 / PHP 8.4** do SISLAC, sistema de gestão de
 laboratórios de análises clínicas. **Multi-tenant, um banco PostgreSQL por
 laboratório**, um único deploy, todos os clientes em `sislac.com.br` (sem
 subdomínio). O front atual (Lovable + Supabase) continua em produção até a
-Fase 4; este backend é desenvolvido em paralelo.
+fase de corte; este backend é desenvolvido em paralelo por ondas verificáveis.
 
 ## Regras que não se negociam
 
@@ -58,6 +58,9 @@ Fase 4; este backend é desenvolvido em paralelo.
 - Regras de negócio hoje em triggers/RPCs do Supabase são preservadas por testes
   de concordância e movidas apenas quando a implementação Laravel equivalente
   estiver comprovada.
+- Cada módulo migrado deve possuir contrato versionado em `docs/contracts/` com
+  SHA da fonte de referência, diferenças aprovadas e testes sintéticos de
+  concordância antes de qualquer corte no frontend.
 - Commits pequenos, mensagens no formato `tipo: resumo` (`feat:`, `fix:`,
   `chore:`, `docs:`, `test:`), em português.
 
@@ -74,8 +77,10 @@ Claude Code. `boost.json` é a configuração versionada da instalação.
 |---------|---------|
 | `app/Platform/` | plano central e identidade |
 | `app/Domain/` | regras do laboratório |
-| `app/Http/Controllers/HealthController.php` | `GET /api/health` |
+| `app/Domain/Pacientes/` | primeira onda de domínio migrada para Laravel |
 | `config/database.php` | conexões `central` e `tenant` |
+| `database/migrations/tenant/` | schema reproduzível de cada laboratório |
+| `docs/contracts/` | baseline Supabase e contratos por módulo |
 | `docker/`, `docker-compose.yml` | PHP-FPM, Nginx, Postgres, Redis, pgAdmin |
 | `docs/` | arquitetura, deploy, segurança e especificações |
 | `scripts/` | guards do CI |
@@ -83,9 +88,10 @@ Claude Code. `boost.json` é a configuração versionada da instalação.
 
 ## Fase atual
 
-**Fase 1 em execução.** Banco central e seleção segura de tenant já possuem
-fundação e testes. Dependências oficiais da fase (`laravel/sanctum`,
-`stancl/tenancy`, `larastan/larastan` e `laravel/boost`) estão instaladas com
-`composer.lock` real. O próximo contrato é autenticação Sanctum stateful,
-contexto multi-database e provisionamento reproduzível antes dos endpoints de
-domínio.
+**Fundação concluída; primeira onda de domínio em validação final.** Banco
+central, Sanctum stateful, seleção segura de tenant, isolamento multi-database e
+provisionamento reproduzível já possuem implementação e testes. O módulo
+**Pacientes** possui schema tenant, `friendly_id`, autorização, leitura por
+cursor, criação e edição no branch da onda atual. O contrato normativo dessa
+onda é `docs/contracts/pacientes.json`; antes de adaptar o frontend, devem passar
+os testes de concordância, segurança e performance e todos os gates do CI.
