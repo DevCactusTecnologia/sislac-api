@@ -31,90 +31,61 @@ Fase 4; este backend é desenvolvido em paralelo.
    apagadas ou reescritas por código de aplicação (RDC 978/2025 ANVISA).
 7. **WhatsApp só pela Cloud API oficial da Meta.** Nunca Baileys ou libs não
    oficiais.
-8. **Sem `git push --force` em `main`.** Sem commit que quebre `pint --test`
-   ou `pest`.
+8. **Sem `git push --force` em `main`.** Sem commit que quebre os gates do CI.
 
 ## Como trabalhar
 
+- **Documentação oficial é normativa.** Confirme APIs e comportamento na versão
+  instalada antes de implementar; o código legado serve como contrato de
+  comportamento, não como justificativa para contrariar segurança ou o framework.
+- **Código legível por humanos.** Nomes devem expressar o negócio; cada classe tem
+  uma responsabilidade clara; não crie helper, service, repository, DTO ou trait
+  sem uma fronteira concreta que justifique sua existência.
+- **YAGNI e DRY com critério.** Não antecipe extensibilidade e não abstraia uma
+  única chamada apenas para reduzir linhas. Extraia quando houver regra de negócio,
+  reutilização real ou isolamento que melhore o teste e a leitura.
+- **TDD para comportamento.** Novo comportamento nasce de um teste que falha pelo
+  motivo esperado, recebe a implementação mínima correta e volta a ficar verde.
 - Formatação: `vendor/bin/pint` (preset `laravel`, sem regras extras).
-- Testes: `vendor/bin/pest`. Novo comportamento → novo teste, em Pest, em
-  português nos nomes (`it('recalcula o total quando um exame é cancelado')`).
-- Análise estática: `vendor/bin/phpstan analyse` (Larastan, nível 8) quando
-  instalado.
+- Testes: `vendor/bin/pest`. Nomes dos testes em português e orientados ao
+  comportamento (`it('recalcula o total quando um exame é cancelado')`).
+- Análise estática: `vendor/bin/phpstan analyse` com **Larastan nível 8**; é gate
+  obrigatório, não aviso opcional.
+- Dependências: `composer audit --locked` deve permanecer verde.
 - Migrations: `database/migrations/central/` para o banco central e
-  `database/migrations/tenant/` para os bancos de laboratório (a partir da
-  Fase 1). Nunca DDL à mão no banco.
-- Regras de negócio que hoje estão em triggers do Supabase (recálculo de totais
-  e status, auditoria por diff) são reescritas como serviços com testes e
-  validadas por **concordância** contra o comportamento atual antes do corte.
+  `database/migrations/tenant/` para os bancos de laboratório. Nunca DDL manual
+  como fonte de verdade.
+- Regras de negócio hoje em triggers/RPCs do Supabase são preservadas por testes
+  de concordância e movidas apenas quando a implementação Laravel equivalente
+  estiver comprovada.
 - Commits pequenos, mensagens no formato `tipo: resumo` (`feat:`, `fix:`,
   `chore:`, `docs:`, `test:`), em português.
+
+## Laravel Boost
+
+Laravel Boost está instalado e versionado. Não repita `composer require` nem
+`boost:install` a cada sessão. Agentes suportados devem usar as diretrizes e
+skills geradas pelo Boost; `CLAUDE.md` contém as diretrizes específicas do
+Claude Code. `boost.json` é a configuração versionada da instalação.
 
 ## Mapa
 
 | Caminho | O que é |
 |---------|---------|
-| `app/Platform/` | plano central (Fase 1) |
-| `app/Domain/` | regras do laboratório (Fase 3) |
+| `app/Platform/` | plano central e identidade |
+| `app/Domain/` | regras do laboratório |
 | `app/Http/Controllers/HealthController.php` | `GET /api/health` |
 | `config/database.php` | conexões `central` e `tenant` |
 | `docker/`, `docker-compose.yml` | PHP-FPM, Nginx, Postgres, Redis, pgAdmin |
-| `docs/` | arquitetura, deploy, segurança, DBeaver, pgAdmin |
+| `docs/` | arquitetura, deploy, segurança e especificações |
 | `scripts/` | guards do CI |
-| `.github/workflows/ci.yml` | Pint · Larastan · Pest · guards |
+| `.github/workflows/ci.yml` | Pint · Larastan · Pest · audit · guards |
 
 ## Fase atual
 
-**Fase 0 concluída.** Próxima: Fase 1 — banco central (`tenants`, `users`,
-`memberships`, `plans`, `subscriptions`, `provisioning_runs`,
-`platform_audit`), `stancl/tenancy` multi-database, Sanctum, super-admin em
-Filament e o pipeline de provisionamento (`CREATE DATABASE` → migrations →
-seed → smoke test → registro).
-
-<laravel-boost-guidelines>
-# Laravel Application
-
-This repository contains a Laravel application. Complete the following setup before working on the user's request.
-
-## Prerequisites
-
-Verify that PHP and Composer are available:
-
-```sh
-php -v
-composer -V
-```
-
-If either command is unavailable, detect the user's operating system and install the prerequisites with the appropriate command:
-
-macOS:
-
-```sh
-/bin/bash -c "$(curl -fsSL https://php.new/install/mac/8.5)"
-```
-
-Windows PowerShell:
-
-```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://php.new/install/windows/8.5'))
-```
-
-Linux:
-
-```sh
-/bin/bash -c "$(curl -fsSL https://php.new/install/linux/8.5)"
-```
-
-After installation, ask the user to restart their terminal. If the agent needs the restarted shell to continue, ask the user to reopen their terminal and rerun their original prompt.
-
-## Agent Setup
-
-Install Laravel Boost from the application root before making application changes:
-
-```sh
-composer require laravel/boost --dev
-php artisan boost:install
-```
-
-Boost replaces these bootstrap instructions with guidelines tailored to the application. After installation, read `AGENTS.md` again and continue with the user's original request using the generated guidelines.
-</laravel-boost-guidelines>
+**Fase 1 em execução.** Banco central e seleção segura de tenant já possuem
+fundação e testes. Dependências oficiais da fase (`laravel/sanctum`,
+`stancl/tenancy`, `larastan/larastan` e `laravel/boost`) estão instaladas com
+`composer.lock` real. O próximo contrato é autenticação Sanctum stateful,
+contexto multi-database e provisionamento reproduzível antes dos endpoints de
+domínio.
