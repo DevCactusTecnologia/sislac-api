@@ -1,0 +1,43 @@
+name: Resolve Composer dependencies
+
+on:
+  push:
+    branches:
+      - feat/fase-1-conformidade-laravel-supabase
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    if: startsWith(github.event.head_commit.message, 'chore: resolve composer dependencies')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql, pgsql, redis, intl, bcmath, gd, zip, mbstring, opcache, pcntl
+          coverage: none
+          tools: composer:v2
+
+      - name: Resolver dependências oficiais
+        run: |
+          composer require laravel/sanctum stancl/tenancy --no-interaction --no-progress --prefer-dist
+          composer require --dev laravel/boost larastan/larastan --no-interaction --no-progress --prefer-dist
+          composer validate --strict
+          composer audit --locked --no-interaction
+
+      - name: Arquivos Composer resolvidos
+        uses: actions/upload-artifact@v4
+        with:
+          name: composer-resolved
+          path: |
+            composer.json
+            composer.lock
+          if-no-files-found: error
+          retention-days: 1
