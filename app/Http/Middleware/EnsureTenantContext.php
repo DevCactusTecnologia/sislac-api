@@ -32,10 +32,6 @@ final readonly class EnsureTenantContext
 
         $requestedTenantId = $request->header('X-Tenant');
 
-        if ($requestedTenantId !== null && ! is_string($requestedTenantId)) {
-            return $this->forbidden();
-        }
-
         try {
             $tenantId = $this->selection->select(
                 $this->memberships->forUser($userId),
