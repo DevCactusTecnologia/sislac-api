@@ -110,15 +110,35 @@ PostgreSQL é criado pela primeira vez. Ele cria `sislac_app` e
 `sislac_central`. Os bancos dos laboratórios são criados posteriormente pelo
 Laravel.
 
+Suba primeiro somente o PostgreSQL, instale as dependências e prepare o banco
+central antes de expor a aplicação:
+
 ```bash
 docker compose build
-docker compose up -d postgres app nginx
+docker compose up -d postgres
 docker compose run --rm app composer install --no-dev --optimize-autoloader
 docker compose run --rm app php artisan key:generate --force
 docker compose run --rm app php artisan migrate --database=central --force
+```
+
+Crie o primeiro Super Admin explicitamente. A senha é solicitada de forma
+interativa e não é passada na linha de comando:
+
+```bash
+docker compose run --rm app php artisan admin:super-user SEU_EMAIL
+```
+
+O comando solicita `Nome`, `Senha` e `Confirme a senha`. Para promover um
+usuário central já existente, execute o mesmo comando com o e-mail dele; a senha
+atual é preservada.
+
+Finalize os caches e suba a aplicação:
+
+```bash
 docker compose run --rm app php artisan config:cache
 docker compose run --rm app php artisan route:cache
 docker compose run --rm app php artisan event:cache
+docker compose up -d app nginx
 ```
 
 Para abrir o pgAdmin localmente na VPS, quando necessário:
@@ -184,12 +204,12 @@ Em cada deploy de código:
 cd /home/sislac/sislac-api
 git pull --ff-only
 docker compose build app
-docker compose up -d app nginx
 docker compose run --rm app composer install --no-dev --optimize-autoloader
 docker compose run --rm app php artisan migrate --database=central --force
 docker compose run --rm app php artisan config:cache
 docker compose run --rm app php artisan route:cache
 docker compose run --rm app php artisan event:cache
+docker compose up -d app nginx
 ```
 
 Migrations de tenant são aplicadas pelo fluxo de provisionamento para novos
