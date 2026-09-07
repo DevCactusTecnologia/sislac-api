@@ -96,11 +96,8 @@ jobs:
       - name: Contrato Supabase ↔ Laravel
         run: php scripts/check-supabase-contract.php
 
-      - name: Pint — diagnóstico temporário
-        run: |
-          vendor/bin/pint database/migrations/tenant/2026_09_07_000200_create_atendimentos_tables.php -v
-          git diff -- database/migrations/tenant/2026_09_07_000200_create_atendimentos_tables.php
-          exit 1
+      - name: Pint — formatação
+        run: vendor/bin/pint --test
 
       - name: Larastan — análise estática nível 8
         run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
