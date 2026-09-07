@@ -21,15 +21,42 @@ done
   fail "Spec Supabase-only superseded reapareceu."
 
 if grep -Eq '(^|[[:space:]])(redis|horizon|reverb):' docker-compose.yml; then
-  fail "Redis/Horizon/Reverb não possuem consumidor runtime nesta fundação."
+  fail "Infraestrutura sem consumidor runtime reapareceu no compose."
 fi
 
 if grep -Eq 'REDIS_|REVERB_|HORIZON_' .env.example; then
-  fail "Variáveis de infraestrutura futura sem consumidor encontradas no .env.example."
+  fail "Variáveis de infraestrutura sem consumidor encontradas no .env.example."
+fi
+
+for orphan in \
+  TENANT_DB_NAME_PREFIX \
+  WHATSAPP_META_ \
+  PDF_SHARE_SECRET \
+  INTERNAL_WEBHOOK_SECRET \
+  AWS_ACCESS_KEY_ID \
+  AWS_SECRET_ACCESS_KEY \
+  AWS_BUCKET \
+  AWS_ENDPOINT \
+  AWS_USE_PATH_STYLE_ENDPOINT; do
+  if grep -q "$orphan" .env.example; then
+    fail "$orphan não possui consumidor aprovado na fundação."
+  fi
+done
+
+if grep -q "'s3' => \[" config/filesystems.php; then
+  fail "Disco S3 configurado sem consumidor runtime."
+fi
+
+if grep -q "'ses' => \[" config/services.php; then
+  fail "Configuração SES sem consumidor runtime."
+fi
+
+if grep -Eq 'Redis|Horizon|Reverb|PDF_SHARE_SECRET|INTERNAL_WEBHOOK_SECRET' docs/DEPLOY.md; then
+  fail "Documentação de deploy contém infraestrutura ou segredos fora da fundação atual."
 fi
 
 if grep -q 'pecl install redis' docker/php/Dockerfile; then
-  fail "Extensão Redis instalada sem consumidor runtime."
+  fail "Extensão de infraestrutura instalada sem consumidor runtime."
 fi
 
 if grep -R -nE "DB::connection\(['\"]supabase_source['\"]\)" app --include='*.php' \
