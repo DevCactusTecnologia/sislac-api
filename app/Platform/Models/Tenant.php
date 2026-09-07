@@ -8,7 +8,7 @@ use LogicException;
 use Stancl\Tenancy\Contracts\TenantWithDatabase;
 use Stancl\Tenancy\Database\Concerns\CentralConnection;
 use Stancl\Tenancy\Database\Concerns\HasDatabase;
-use Stancl\Tenancy\TenantRun;
+use Stancl\Tenancy\Database\Concerns\TenantRun;
 
 final class Tenant extends Model implements TenantWithDatabase
 {
