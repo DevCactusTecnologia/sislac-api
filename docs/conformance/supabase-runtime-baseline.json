@@ -1,0 +1,34 @@
+{
+  "captured_at": "2026-09-07",
+  "frontend": {
+    "repository": "DevCactusTecnologia/sislacprivado",
+    "sha": "0760c6123f3062842eaff5f7304b6460c00c058d"
+  },
+  "supabase": {
+    "project_ref": "eramenhnqcbyctyiqwlm",
+    "postgres_major": 17
+  },
+  "inventory": {
+    "tables": 96,
+    "views": 2,
+    "enums": 6,
+    "rls_enabled_tables": 96,
+    "rls_disabled_tables": 0
+  },
+  "security_findings": [
+    "authenticated_security_definer_function_executable:create_atendimento_tx",
+    "authenticated_security_definer_function_executable:update_atendimento_tx",
+    "auth_compromised_credential_check_disabled"
+  ],
+  "performance_findings": [
+    "auth_rls_initplan",
+    "multiple_permissive_policies",
+    "duplicate_index"
+  ],
+  "classification": {
+    "required-runtime": [],
+    "required-compat": [],
+    "platform-specific": [],
+    "dead-or-legacy": []
+  }
+}
