@@ -94,6 +94,7 @@ final readonly class TenantProvisioner
 
         try {
             $exitCode = Artisan::call('migrate', [
+                '--database' => 'tenant',
                 '--path' => database_path('migrations/tenant'),
                 '--realpath' => true,
                 '--force' => true,
@@ -103,7 +104,8 @@ final readonly class TenantProvisioner
                 throw new RuntimeException('Migration do tenant falhou.');
             }
 
-            $currentDatabase = DB::selectOne('select current_database() as database');
+            $currentDatabase = DB::connection('tenant')
+                ->selectOne('select current_database() as database');
 
             if (($currentDatabase->database ?? null) !== $database) {
                 throw new RuntimeException('Smoke test conectou ao banco incorreto.');
