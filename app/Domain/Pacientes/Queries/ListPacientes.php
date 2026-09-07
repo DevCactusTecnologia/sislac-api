@@ -3,9 +3,9 @@
 namespace App\Domain\Pacientes\Queries;
 
 use App\Domain\Pacientes\Models\Paciente;
+use App\Domain\Pacientes\Support\PacienteCursor;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
-use InvalidArgumentException;
 
 final class ListPacientes
 {
@@ -29,7 +29,7 @@ final class ListPacientes
         }
 
         if ($cursor !== null && $cursor !== '') {
-            $decoded = $this->decodeCursor($cursor);
+            $decoded = PacienteCursor::decode($cursor);
             $page->where(function (Builder $query) use ($decoded): void {
                 $query->where('updated_at', '<', $decoded['updated_at'])
                     ->orWhere(function (Builder $sameTimestamp) use ($decoded): void {
@@ -53,7 +53,7 @@ final class ListPacientes
         if ($hasMore && $data->isNotEmpty()) {
             /** @var Paciente $last */
             $last = $data->last();
-            $nextCursor = $this->encodeCursor((string) $last->updated_at, (int) $last->getKey());
+            $nextCursor = PacienteCursor::encode((string) $last->updated_at, (int) $last->getKey());
         }
 
         return [
@@ -85,42 +85,5 @@ final class ListPacientes
         }
 
         $query->whereRaw('LOWER(nome) LIKE LOWER(?)', ['%'.$search.'%']);
-    }
-
-    /** @return array{updated_at:string,id:int} */
-    private function decodeCursor(string $cursor): array
-    {
-        $normalized = strtr($cursor, '-_', '+/');
-        $padding = strlen($normalized) % 4;
-
-        if ($padding !== 0) {
-            $normalized .= str_repeat('=', 4 - $padding);
-        }
-
-        $json = base64_decode($normalized, true);
-        $decoded = $json === false ? null : json_decode($json, true);
-
-        if (! is_array($decoded)
-            || ! isset($decoded['updated_at'], $decoded['id'])
-            || ! is_string($decoded['updated_at'])
-            || ! is_int($decoded['id'])
-            || $decoded['id'] < 1) {
-            throw new InvalidArgumentException('Cursor de pacientes inválido.');
-        }
-
-        return [
-            'updated_at' => $decoded['updated_at'],
-            'id' => $decoded['id'],
-        ];
-    }
-
-    private function encodeCursor(string $updatedAt, int $id): string
-    {
-        $json = json_encode([
-            'updated_at' => $updatedAt,
-            'id' => $id,
-        ], JSON_THROW_ON_ERROR);
-
-        return rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
     }
 }
