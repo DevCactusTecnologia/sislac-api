@@ -6,7 +6,7 @@ on:
       - feat/fase-1-conformidade-laravel-supabase
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   resolve:
@@ -24,19 +24,19 @@ jobs:
           coverage: none
           tools: composer:v2
 
-      - name: Resolver dependências oficiais
+      - name: Resolver e validar dependências oficiais
         run: |
           composer require laravel/sanctum stancl/tenancy --no-interaction --no-progress --prefer-dist
           composer require --dev laravel/boost larastan/larastan --no-interaction --no-progress --prefer-dist
           composer validate --strict
           composer audit --locked --no-interaction
 
-      - name: Arquivos Composer resolvidos
-        uses: actions/upload-artifact@v4
-        with:
-          name: composer-resolved
-          path: |
-            composer.json
-            composer.lock
-          if-no-files-found: error
-          retention-days: 1
+      - name: Versionar resultado exato e remover este resolvedor
+        run: |
+          rm .github/workflows/resolve-composer.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add composer.json composer.lock .github/workflows/resolve-composer.yml
+          git diff --cached --check
+          git commit -m "chore: instala dependências oficiais da fase 1"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
