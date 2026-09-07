@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Atendimentos\StoreAtendimentoController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\SessionController;
@@ -36,3 +37,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'tenant.permission:editar_paciente'
     ->patch('/pacientes/{id}', UpdatePacienteController::class)
     ->whereNumber('id')
     ->name('pacientes.update');
+
+Route::middleware(['auth:sanctum', 'tenant', 'tenant.permission:criar_atendimento'])
+    ->post('/atendimentos', StoreAtendimentoController::class)
+    ->name('atendimentos.store');
