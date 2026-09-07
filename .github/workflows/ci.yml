@@ -92,13 +92,8 @@ jobs:
       - name: Pint — formatação
         run: vendor/bin/pint --test
 
-      - name: Larastan — análise estática
-        run: |
-          if [ -x vendor/bin/phpstan ]; then
-            vendor/bin/phpstan analyse --no-progress --memory-limit=1G
-          else
-            echo "::warning::Larastan ainda não instalado; será gate obrigatório na Fase 1B após atualização legítima do composer.lock."
-          fi
+      - name: Larastan — análise estática nível 8
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
 
       - name: Pest — testes
         run: vendor/bin/pest --parallel --colors=always
