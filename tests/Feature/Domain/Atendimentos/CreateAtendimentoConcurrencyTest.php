@@ -7,20 +7,28 @@ use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->previousDefaultConnection = config('database.default');
+    $this->concurrencyConnection = 'atendimento_concurrency';
     $this->concurrencyDatabase = 'sislac_t_atd_race_'.Str::lower(Str::random(10));
 
     atendimentoConcurrencyControlConnection()->exec('CREATE DATABASE "'.$this->concurrencyDatabase.'"');
 
+    $connection = config('database.connections.central');
+    if (! is_array($connection)) {
+        throw new RuntimeException('Conexão central PostgreSQL indisponível para o teste concorrente.');
+    }
+
+    $connection['database'] = $this->concurrencyDatabase;
+
     config([
-        'database.default' => 'tenant',
-        'database.connections.tenant.database' => $this->concurrencyDatabase,
+        'database.default' => $this->concurrencyConnection,
+        'database.connections.'.$this->concurrencyConnection => $connection,
     ]);
 
-    DB::purge('tenant');
-    DB::setDefaultConnection('tenant');
+    DB::purge($this->concurrencyConnection);
+    DB::setDefaultConnection($this->concurrencyConnection);
 
     Artisan::call('migrate', [
-        '--database' => 'tenant',
+        '--database' => $this->concurrencyConnection,
         '--path' => database_path('migrations/tenant'),
         '--realpath' => true,
         '--force' => true,
@@ -45,11 +53,11 @@ beforeEach(function () {
         EXECUTE FUNCTION test_delay_atendimento_insert()
     SQL);
 
-    DB::purge('tenant');
+    DB::purge($this->concurrencyConnection);
 });
 
 afterEach(function () {
-    DB::purge('tenant');
+    DB::purge($this->concurrencyConnection);
     DB::setDefaultConnection((string) $this->previousDefaultConnection);
     config(['database.default' => $this->previousDefaultConnection]);
 
@@ -61,6 +69,10 @@ afterEach(function () {
 function atendimentoConcurrencyControlConnection(): PDO
 {
     $config = config('database.connections.central');
+
+    if (! is_array($config)) {
+        throw new RuntimeException('Conexão central PostgreSQL indisponível.');
+    }
 
     return new PDO(
         sprintf('pgsql:host=%s;port=%s;dbname=postgres', $config['host'], $config['port']),
@@ -102,8 +114,9 @@ it('retorna o mesmo atendimento quando a mesma idempotency key chega em concorre
     }
 
     unlink($barrier);
+    $connectionName = $this->concurrencyConnection;
 
-    $spawn = static function (string $resultFile) use ($barrier, $payload): int {
+    $spawn = static function (string $resultFile) use ($barrier, $payload, $connectionName): int {
         $pid = pcntl_fork();
 
         if ($pid !== 0) {
@@ -114,8 +127,8 @@ it('retorna o mesmo atendimento quando a mesma idempotency key chega em concorre
             usleep(1_000);
         }
 
-        DB::purge('tenant');
-        DB::setDefaultConnection('tenant');
+        DB::purge($connectionName);
+        DB::setDefaultConnection($connectionName);
 
         try {
             $result = app(CreateAtendimento::class)->handle($payload);
@@ -126,7 +139,7 @@ it('retorna o mesmo atendimento quando a mesma idempotency key chega em concorre
                 'error_message' => $exception->getMessage(),
             ], JSON_THROW_ON_ERROR));
         } finally {
-            DB::purge('tenant');
+            DB::purge($connectionName);
         }
 
         exit(0);
@@ -155,8 +168,8 @@ it('retorna o mesmo atendimento quando a mesma idempotency key chega em concorre
         ->toContain(false)
         ->toContain(true);
 
-    DB::purge('tenant');
-    DB::setDefaultConnection('tenant');
+    DB::purge($connectionName);
+    DB::setDefaultConnection($connectionName);
 
     expect(DB::table('atendimentos')->where('idempotency_key', $key)->count())->toBe(1)
         ->and(DB::table('atendimento_exames')->count())->toBe(1)
