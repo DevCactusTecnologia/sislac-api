@@ -1,15 +1,26 @@
 <?php
 
+use App\Http\Middleware\EnsureTenantContext;
 use App\Platform\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->tenantDatabases = [];
     $this->withHeader('Origin', 'https://sislac.com.br');
+
+    Route::middleware(['api', 'auth:sanctum', EnsureTenantContext::class])
+        ->get('/_test/tenant-probe', fn () => response()->json([
+            'marker' => DB::table('tenant_probe')->value('marker'),
+        ]));
+
+    Route::middleware(['api', 'auth:sanctum', EnsureTenantContext::class])
+        ->get('/_test/tenant-failure', fn () => throw new RuntimeException('falha sintética'));
 });
 
 afterEach(function () {
@@ -33,7 +44,7 @@ function postgresControlConnection(?string $database = null): PDO
     );
 }
 
-function createTenantDatabase(string $marker): array
+function createTenantDatabase(string $marker): string
 {
     $database = 'sislac_t_test_'.Str::lower(Str::random(12));
 
@@ -46,7 +57,7 @@ function createTenantDatabase(string $marker): array
     $statement = $pdo->prepare('INSERT INTO tenant_probe (marker) VALUES (?)');
     $statement->execute([$marker]);
 
-    return [$database, $marker];
+    return $database;
 }
 
 function createCentralTenantForIsolation(string $database, string $code): string
@@ -82,8 +93,8 @@ function attachActiveMembership(User $user, string $tenantId): void
 }
 
 it('seleciona automaticamente o único tenant e consulta somente o banco dele', function () {
-    [$databaseA] = createTenantDatabase('TENANT-A');
-    [$databaseB] = createTenantDatabase('TENANT-B');
+    $databaseA = createTenantDatabase('TENANT-A');
+    $databaseB = createTenantDatabase('TENANT-B');
     $this->tenantDatabases = [$databaseA, $databaseB];
 
     $tenantA = createCentralTenantForIsolation($databaseA, 'lab-a-'.Str::lower(Str::random(6)));
@@ -93,7 +104,7 @@ it('seleciona automaticamente o único tenant e consulta somente o banco dele', 
     attachActiveMembership($user, $tenantA);
 
     $this->actingAs($user, 'web')
-        ->getJson('/api/tenant/context')
+        ->getJson('/_test/tenant-probe')
         ->assertOk()
         ->assertJsonPath('marker', 'TENANT-A');
 
@@ -101,7 +112,7 @@ it('seleciona automaticamente o único tenant e consulta somente o banco dele', 
 });
 
 it('recusa X-Tenant sem vínculo antes de abrir o banco solicitado', function () {
-    [$databaseA] = createTenantDatabase('TENANT-A');
+    $databaseA = createTenantDatabase('TENANT-A');
     $this->tenantDatabases = [$databaseA];
 
     $tenantA = createCentralTenantForIsolation($databaseA, 'lab-a-'.Str::lower(Str::random(6)));
@@ -112,15 +123,15 @@ it('recusa X-Tenant sem vínculo antes de abrir o banco solicitado', function ()
 
     $this->actingAs($user, 'web')
         ->withHeader('X-Tenant', $tenantB)
-        ->getJson('/api/tenant/context')
+        ->getJson('/_test/tenant-probe')
         ->assertForbidden();
 
     expect(config('database.default'))->toBe('central');
 });
 
 it('exige X-Tenant quando o usuário possui mais de um vínculo ativo', function () {
-    [$databaseA] = createTenantDatabase('TENANT-A');
-    [$databaseB] = createTenantDatabase('TENANT-B');
+    $databaseA = createTenantDatabase('TENANT-A');
+    $databaseB = createTenantDatabase('TENANT-B');
     $this->tenantDatabases = [$databaseA, $databaseB];
 
     $tenantA = createCentralTenantForIsolation($databaseA, 'lab-a-'.Str::lower(Str::random(6)));
@@ -131,13 +142,39 @@ it('exige X-Tenant quando o usuário possui mais de um vínculo ativo', function
     attachActiveMembership($user, $tenantB);
 
     $this->actingAs($user, 'web')
-        ->getJson('/api/tenant/context')
+        ->getJson('/_test/tenant-probe')
         ->assertStatus(409);
 
     $this->withHeader('X-Tenant', $tenantB)
-        ->getJson('/api/tenant/context')
+        ->getJson('/_test/tenant-probe')
         ->assertOk()
         ->assertJsonPath('marker', 'TENANT-B');
 
     expect(config('database.default'))->toBe('central');
+});
+
+it('restaura o banco central mesmo quando a requisição tenant lança exceção', function () {
+    $databaseA = createTenantDatabase('TENANT-A');
+    $this->tenantDatabases = [$databaseA];
+
+    $tenantA = createCentralTenantForIsolation($databaseA, 'lab-a-'.Str::lower(Str::random(6)));
+    $user = User::factory()->create();
+    attachActiveMembership($user, $tenantA);
+
+    $this->withoutExceptionHandling();
+
+    try {
+        $this->actingAs($user, 'web')->get('/_test/tenant-failure');
+    } catch (RuntimeException $exception) {
+        expect($exception->getMessage())->toBe('falha sintética');
+    } finally {
+        $this->withExceptionHandling();
+    }
+
+    expect(tenancy()->initialized)->toBeFalse()
+        ->and(config('database.default'))->toBe('central');
+
+    $this->getJson('/_test/tenant-probe')
+        ->assertOk()
+        ->assertJsonPath('marker', 'TENANT-A');
 });
