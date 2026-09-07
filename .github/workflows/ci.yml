@@ -95,7 +95,7 @@ jobs:
   guards:
     name: Guards de repositório
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: ripgrep
@@ -104,6 +104,8 @@ jobs:
         run: bash scripts/check-no-central-in-tenant.sh
       - name: Escopo do backend
         run: bash scripts/check-backend-scope.sh
+      - name: Bootstrap PostgreSQL do compose
+        run: bash scripts/check-postgres-bootstrap.sh
       - name: Contrato PostgreSQL-only
         run: bash scripts/check-database-contract.sh
       - name: Nenhum arquivo acima de 500 KiB
