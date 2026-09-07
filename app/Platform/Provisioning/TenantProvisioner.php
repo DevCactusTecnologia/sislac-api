@@ -85,7 +85,7 @@ final readonly class TenantProvisioner
         $tenant->refresh();
         $database = $tenant->database_name;
 
-        if (! is_string($database) || $database === '') {
+        if ($database === '') {
             throw new RuntimeException('Tenant sem database_name válido.');
         }
 
@@ -105,7 +105,7 @@ final readonly class TenantProvisioner
 
             $currentDatabase = DB::selectOne('select current_database() as database');
 
-            if (($currentDatabase?->database ?? null) !== $database) {
+            if (($currentDatabase->database ?? null) !== $database) {
                 throw new RuntimeException('Smoke test conectou ao banco incorreto.');
             }
         } finally {
