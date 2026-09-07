@@ -9,9 +9,11 @@ it('mantém o backend no escopo database-per-lab com Super Admin Laravel', funct
     $architecture = file_get_contents(base_path('docs/ARCHITECTURE.md'));
 
     expect($composer)->toContain('stancl/tenancy')
-        ->and($tenancy)->toContain('DatabaseTenancyBootstrapper')
-        ->and(substr_count($tenancy, 'TenancyBootstrapper'))
-        ->toBe(1)
+        ->and($tenancy)->toContain('DatabaseTenancyBootstrapper::class')
+        ->and(substr_count($tenancy, "        DatabaseTenancyBootstrapper::class,\n"))->toBe(1)
+        ->and(str_contains($tenancy, 'CacheTenancyBootstrapper'))->toBeFalse()
+        ->and(str_contains($tenancy, 'FilesystemTenancyBootstrapper'))->toBeFalse()
+        ->and(str_contains($tenancy, 'QueueTenancyBootstrapper'))->toBeFalse()
         ->and($readme)->toContain('Super Admin')
         ->and(Str::lower($readme))->toContain('um banco postgresql por laboratório')
         ->and($architecture)->toContain('Super Admin')
