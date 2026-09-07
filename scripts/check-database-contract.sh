@@ -11,19 +11,18 @@ fi
 
 violations=0
 
-# O backend SISLAC é PostgreSQL-only. O skeleton não deve manter drivers de
-# aplicação que possam ser usados acidentalmente em produção.
-if rg -n "'mysql'\s*=>|'mariadb'\s*=>|Pdo\\\\Mysql" config/database.php; then
-    echo "::error::config/database.php ainda expõe MySQL/MariaDB."
+# Produção é PostgreSQL-only. SQLite permanece permitido exclusivamente como
+# conexão de teste local; nenhum outro driver deve existir na configuração.
+if rg -n "'(mysql|mariadb|sqlsrv)'\s*=>|Pdo\\\\Mysql" config/database.php; then
+    echo "::error::config/database.php expõe driver incompatível com PostgreSQL."
     violations=$((violations + 1))
 fi
 
-# Código de aplicação não pode selecionar drivers incompatíveis diretamente.
 if rg -n --type php \
-    -e "DB::connection\(['\"](?:mysql|mariadb)['\"]\)" \
-    -e "['\"]driver['\"]\s*=>\s*['\"](?:mysql|mariadb)['\"]" \
+    -e "DB::connection\(['\"](?:mysql|mariadb|sqlsrv)['\"]\)" \
+    -e "['\"]driver['\"]\s*=>\s*['\"](?:mysql|mariadb|sqlsrv)['\"]" \
     app 2>/dev/null; then
-    echo "::error::Código da aplicação referencia MySQL/MariaDB."
+    echo "::error::Código da aplicação referencia driver incompatível."
     violations=$((violations + 1))
 fi
 
