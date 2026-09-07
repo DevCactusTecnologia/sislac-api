@@ -63,7 +63,7 @@ return new class extends Migration
             $table->timestampTz('data_coleta')->nullable();
             $table->timestampTz('data_analise')->nullable();
             $table->timestampTz('data_liberacao')->nullable();
-            $table->jsonb('resultados')->default(DB::raw("'{}'::jsonb"));
+            $table->jsonb('resultados')->default(DB::raw('\'{}\'::jsonb'));
             $table->text('motivo_cancelamento')->nullable();
             $table->integer('ordem')->default(0);
             $table->text('tipo_processo')->default('INTERNO');
