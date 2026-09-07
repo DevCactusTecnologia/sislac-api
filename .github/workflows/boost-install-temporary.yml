@@ -1,0 +1,47 @@
+name: Install Laravel Boost
+
+on:
+  push:
+    branches:
+      - feat/fase-1-conformidade-laravel-supabase
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql, pgsql, redis, intl, bcmath, gd, zip, mbstring, opcache, pcntl
+          coverage: none
+          tools: composer:v2
+
+      - name: Dependências
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Ambiente Laravel
+        run: |
+          cp .env.example .env
+          php artisan key:generate --ansi
+
+      - name: Instalar Laravel Boost conforme documentação oficial
+        run: php artisan boost:install --no-interaction
+
+      - name: Versionar somente o resultado e remover este workflow
+        run: |
+          rm .github/workflows/boost-install-temporary.yml
+          git diff --check
+          git status --short
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: aplica configuração oficial do Laravel Boost"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
