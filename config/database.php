@@ -1,37 +1,13 @@
 <?php
 
 use Illuminate\Support\Str;
-use Pdo\Mysql;
 
 return [
-
-    /*
-    |--------------------------------------------------------------------------
-    | Default Database Connection Name
-    |--------------------------------------------------------------------------
-    |
-    | Here you may specify which of the database connections below you wish
-    | to use as your default connection for database operations. This is
-    | the connection which will be utilized unless another connection
-    | is explicitly specified when you execute a query / statement.
-    |
-    */
-
-    'default' => env('DB_CONNECTION', 'sqlite'),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Database Connections
-    |--------------------------------------------------------------------------
-    |
-    | Below are all of the database connections defined for your application.
-    | An example configuration is provided for each database system which
-    | is supported by Laravel. You're free to add / remove connections.
-    |
-    */
+    'default' => env('DB_CONNECTION', 'central'),
 
     'connections' => [
-
+        // Permitida somente para testes locais rápidos. CI e produção usam
+        // PostgreSQL real para preservar a semântica do banco de produção.
         'sqlite' => [
             'driver' => 'sqlite',
             'url' => env('DB_URL'),
@@ -44,69 +20,8 @@ return [
             'transaction_mode' => 'DEFERRED',
         ],
 
-        'mysql' => [
-            'driver' => 'mysql',
-            'url' => env('DB_URL'),
-            'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '3306'),
-            'database' => env('DB_DATABASE', 'laravel'),
-            'username' => env('DB_USERNAME', 'root'),
-            'password' => env('DB_PASSWORD', ''),
-            'unix_socket' => env('DB_SOCKET', ''),
-            'charset' => env('DB_CHARSET', 'utf8mb4'),
-            'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
-            'prefix' => '',
-            'prefix_indexes' => true,
-            'strict' => true,
-            'engine' => null,
-            'options' => extension_loaded('pdo_mysql') ? array_filter([
-                Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
-            ]) : [],
-        ],
-
-        'mariadb' => [
-            'driver' => 'mariadb',
-            'url' => env('DB_URL'),
-            'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '3306'),
-            'database' => env('DB_DATABASE', 'laravel'),
-            'username' => env('DB_USERNAME', 'root'),
-            'password' => env('DB_PASSWORD', ''),
-            'unix_socket' => env('DB_SOCKET', ''),
-            'charset' => env('DB_CHARSET', 'utf8mb4'),
-            'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
-            'prefix' => '',
-            'prefix_indexes' => true,
-            'strict' => true,
-            'engine' => null,
-            'options' => extension_loaded('pdo_mysql') ? array_filter([
-                Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
-            ]) : [],
-        ],
-
-        'pgsql' => [
-            'driver' => 'pgsql',
-            'url' => env('DB_URL'),
-            'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '5432'),
-            'database' => env('DB_DATABASE', 'laravel'),
-            'username' => env('DB_USERNAME', 'root'),
-            'password' => env('DB_PASSWORD', ''),
-            'charset' => env('DB_CHARSET', 'utf8'),
-            'prefix' => '',
-            'prefix_indexes' => true,
-            'search_path' => 'public',
-            'sslmode' => env('DB_SSLMODE', 'prefer'),
-        ],
-
-        /*
-        |------------------------------------------------------------------
-        | SISLAC — banco CENTRAL (tenants, usuários, vínculos, planos)
-        |------------------------------------------------------------------
-        | É a conexão padrão da aplicação (DB_CONNECTION=central). Só os
-        | models de plataforma (app/Platform) apontam para ela explicitamente.
-        */
-
+        // Plano central: identidade, tenants, memberships, planos e
+        // provisionamento. É a conexão padrão da aplicação.
         'central' => [
             'driver' => 'pgsql',
             'url' => env('DB_URL'),
@@ -115,23 +30,15 @@ return [
             'database' => env('DB_DATABASE', 'sislac_central'),
             'username' => env('DB_USERNAME', 'sislac_app'),
             'password' => env('DB_PASSWORD', ''),
-            'charset' => env('DB_CHARSET', 'utf8'),
+            'charset' => 'utf8',
             'prefix' => '',
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
-        /*
-        |------------------------------------------------------------------
-        | SISLAC — conexão de TENANT (um banco por laboratório)
-        |------------------------------------------------------------------
-        | Molde: o `database` fica vazio aqui e é definido em runtime pelo
-        | middleware de tenancy (Fase 1) a partir do laboratório da requisição
-        | (sislac_t_1001, sislac_t_1002, ...). Nunca use esta conexão
-        | diretamente fora do middleware.
-        */
-
+        // Molde da conexão por laboratório. O banco é preenchido apenas após
+        // autenticação e autorização central do tenant da requisição.
         'tenant' => [
             'driver' => 'pgsql',
             'host' => env('TENANT_DB_HOST', env('DB_HOST', '127.0.0.1')),
@@ -139,64 +46,28 @@ return [
             'database' => null,
             'username' => env('TENANT_DB_USERNAME', env('DB_USERNAME', 'sislac_app')),
             'password' => env('TENANT_DB_PASSWORD', env('DB_PASSWORD', '')),
-            'charset' => env('DB_CHARSET', 'utf8'),
+            'charset' => 'utf8',
             'prefix' => '',
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
-
-        'sqlsrv' => [
-            'driver' => 'sqlsrv',
-            'url' => env('DB_URL'),
-            'host' => env('DB_HOST', 'localhost'),
-            'port' => env('DB_PORT', '1433'),
-            'database' => env('DB_DATABASE', 'laravel'),
-            'username' => env('DB_USERNAME', 'root'),
-            'password' => env('DB_PASSWORD', ''),
-            'charset' => env('DB_CHARSET', 'utf8'),
-            'prefix' => '',
-            'prefix_indexes' => true,
-            // 'encrypt' => env('DB_ENCRYPT', 'yes'),
-            // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
-        ],
-
     ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Migration Repository Table
-    |--------------------------------------------------------------------------
-    |
-    | This table keeps track of all the migrations that have already run for
-    | your application. Using this information, we can determine which of
-    | the migrations on disk haven't actually been run on the database.
-    |
-    */
 
     'migrations' => [
         'table' => 'migrations',
         'update_date_on_publish' => true,
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Redis Databases
-    |--------------------------------------------------------------------------
-    |
-    | Redis is an open source, fast, and advanced key-value store that also
-    | provides a richer body of commands than a typical key-value system
-    | such as Memcached. You may define your connection settings here.
-    |
-    */
-
     'redis' => [
-
         'client' => env('REDIS_CLIENT', 'phpredis'),
 
         'options' => [
             'cluster' => env('REDIS_CLUSTER', 'redis'),
-            'prefix' => env('REDIS_PREFIX', Str::slug((string) env('APP_NAME', 'laravel')).'-database-'),
+            'prefix' => env(
+                'REDIS_PREFIX',
+                Str::slug((string) env('APP_NAME', 'sislac')).'-database-',
+            ),
             'persistent' => env('REDIS_PERSISTENT', false),
         ],
 
@@ -225,7 +96,5 @@ return [
             'backoff_base' => env('REDIS_BACKOFF_BASE', 100),
             'backoff_cap' => env('REDIS_BACKOFF_CAP', 1000),
         ],
-
     ],
-
 ];
