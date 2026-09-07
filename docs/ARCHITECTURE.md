@@ -79,10 +79,15 @@ não integra esta onda porque o frontend fixado não possui consumidor executáv
 desse fluxo.
 
 No banco tenant, `pacientes` preserva as invariantes relevantes por constraints
-e índices PostgreSQL. A busca case-insensitive por nome usa `pg_trgm` com GIN;
-a paginação usa keyset por `(updated_at,id)`. Ambos os planos são exercitados
-com `EXPLAIN (ANALYZE, BUFFERS)` em testes de integração, sem impor números de
-latência artificiais ao runner de CI.
+e índices PostgreSQL. A busca case-insensitive por nome possui suporte GIN com
+`pg_trgm`, enquanto a paginação keyset possui índice composto por
+`(updated_at,id)`. Os dois access paths são verificados separadamente com
+`EXPLAIN (ANALYZE, BUFFERS)`: em uma consulta que combina filtro textual,
+ordenação e `LIMIT`, o planner pode legitimamente preferir o índice de
+paginação para satisfazer a ordenação e aplicar o predicado textual como
+filtro. Os testes, portanto, comprovam a utilizabilidade de cada índice sem
+forçar uma estratégia específica quando ambos competem no mesmo plano, nem
+impõem números de latência artificiais ao runner de CI.
 
 ## Fronteira Platform ↔ Domain
 
