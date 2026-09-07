@@ -85,11 +85,9 @@ it('mantém o contador atômico entre conexões independentes', function () {
 });
 
 it('impede alteração do friendly id depois de persistido', function () {
-    $paciente = Paciente::query()->create([
-        'nome' => 'Paciente Imutável',
-    ]);
-
-    $paciente->forceFill(['friendly_id' => 'PAC-000001'])->save();
+    $paciente = new Paciente(['nome' => 'Paciente Imutável']);
+    $paciente->forceFill(['friendly_id' => 'PAC-000001']);
+    $paciente->save();
 
     expect(function () use ($paciente): void {
         $paciente->forceFill(['friendly_id' => 'PAC-999999'])->save();
