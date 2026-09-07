@@ -7,14 +7,11 @@ use App\Http\Requests\Pacientes\ListPacientesRequest;
 use App\Http\Resources\Pacientes\PacienteResource;
 use Illuminate\Http\JsonResponse;
 
-final readonly class ListPacientesController
+final class ListPacientesController
 {
-    public function __construct(private ListPacientes $query)
-    {}
-
-    public function __invoke(ListPacientesRequest $request): JsonResponse
+    public function __invoke(ListPacientesRequest $request, ListPacientes $query): JsonResponse
     {
-        $result = $this->query->execute(
+        $result = $query->execute(
             $request->string('status', 'Todos')->toString(),
             $request->string('q')->toString(),
             $request->string('cursor')->toString(),
