@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-07T12:30:00-03:00",
+  "frontend": {
+    "repository": "DevCactusTecnologia/sislacprivado",
+    "commit": "0760c6123f3062842eaff5f7304b6460c00c058d"
+  },
+  "supabase": {
+    "project_ref": "eramenhnqcbyctyiqwlm",
+    "postgres_major": 17,
+    "tables": [
+      "public.atendimentos",
+      "public.atendimento_exames",
+      "public.atendimento_pagamentos"
+    ],
+    "functions": [
+      "public.create_atendimento_tx",
+      "public.update_atendimento_tx",
+      "public.generate_protocolo_curto",
+      "public.recompute_atendimento_status",
+      "public.recompute_atendimento_completo"
+    ],
+    "critical_triggers": {
+      "atendimentos": [
+        "trg_atendimento_assign_protocolo",
+        "trg_protect_atendimento_protocolo",
+        "trg_audit_atendimentos"
+      ],
+      "atendimento_exames": [
+        "recompute_atendimento_on_exame",
+        "trg_atendimento_exames_short_circuit_rotina",
+        "guard_valor_original",
+        "trg_validate_atendimento_exame_status"
+      ],
+      "atendimento_pagamentos": [
+        "recompute_status_on_pagamento",
+        "trg_block_delete_pagamentos",
+        "trg_guard_caixa_aberta_pagamentos"
+      ]
+    }
+  },
+  "authorization": {
+    "create": "criar_atendimento",
+    "read_any": [
+      "visualizar_atendimentos",
+      "registrar_coleta",
+      "analisar_amostra",
+      "liberar_resultado",
+      "imprimir_laudo",
+      "consultar_resultados"
+    ],
+    "edit": "editar_atendimento",
+    "cancel": "cancelar_atendimento",
+    "payment": "registrar_pagamento"
+  },
+  "create_contract": {
+    "transport": "edge:create-atendimento -> rpc:create_atendimento_tx",
+    "atomic": true,
+    "required": ["paciente_nome", "paciente_cpf"],
+    "children": ["exames", "pagamentos"],
+    "idempotency": {
+      "field": "idempotency_key",
+      "type": "uuid",
+      "duplicate_returns_existing": true
+    },
+    "protocol": {
+      "generated_server_side": true,
+      "format": "7-digit zero-padded numeric string",
+      "immutable": true
+    },
+    "defaults": {
+      "convenio_id": 0,
+      "convenio_nome": "Particular",
+      "unidade_id": "und-001",
+      "origem_atendimento": "INTERNO",
+      "jejum": false,
+      "prioridade_clinica": "normal",
+      "exame_status": "pendente",
+      "exame_cobranca_destino": "paciente",
+      "exame_amostra_seq": 1,
+      "pagamento_status": "efetuado"
+    }
+  },
+  "derived_fields": [
+    "status_atendimento",
+    "status_pagamento",
+    "subtotal",
+    "desconto_total",
+    "acrescimo_total",
+    "total"
+  ],
+  "status_rules": {
+    "atendimento": [
+      "Pedido Realizado",
+      "Amostra Coletada",
+      "Amostra Analisada",
+      "Resultado Liberado",
+      "Cancelado"
+    ],
+    "pagamento": [
+      "Pagamento pendente",
+      "Pagamento parcial",
+      "Pagamento efetuado",
+      "Pagamento cancelado",
+      "Faturado ao convênio"
+    ],
+    "exame": [
+      "pendente",
+      "coletado",
+      "em_bancada",
+      "analisado",
+      "em_analise",
+      "digitado",
+      "finalizado",
+      "cancelado"
+    ]
+  },
+  "frontend_transformations": {
+    "cpf": "digits-only",
+    "date_time": "BR datetime -> ISO timestamptz",
+    "birth_date": "BR date -> ISO date",
+    "terceirizado_initial_status": "digitado",
+    "interno_initial_status": "pendente",
+    "grupo_exame_id": "stable UUID per exam identity in payload",
+    "amostra_seq": "1-based occurrence per exam identity"
+  },
+  "approved_scope": {
+    "include": [
+      "create",
+      "read",
+      "update",
+      "cancel",
+      "exam/payment child consistency",
+      "idempotency",
+      "derived statuses/totals"
+    ],
+    "defer_to_owner_wave": [
+      "full coleta workflow",
+      "full análise workflow",
+      "full resultado workflow",
+      "full financeiro/fatura/caixa workflow"
+    ]
+  },
+  "safety": {
+    "contains_production_rows": false,
+    "contains_credentials": false
+  }
+}
