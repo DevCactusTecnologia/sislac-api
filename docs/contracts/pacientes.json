@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "captured_at": "2026-09-07",
+  "baseline": {
+    "frontend_repository": "DevCactusTecnologia/sislacprivado",
+    "frontend_sha": "0760c6123f3062842eaff5f7304b6460c00c058d",
+    "frontend_source": "src/data/pacienteStore.ts",
+    "supabase_project_ref": "eramenhnqcbyctyiqwlm",
+    "postgres_major": 17
+  },
+  "supabase": {
+    "table": "public.pacientes",
+    "rls_enabled": true,
+    "columns": [
+      {"name": "id", "type": "bigint", "nullable": false},
+      {"name": "nome", "type": "text", "nullable": false},
+      {"name": "cpf", "type": "text", "nullable": true},
+      {"name": "data_nascimento", "type": "date", "nullable": true},
+      {"name": "sexo", "type": "text", "nullable": false, "default": "M"},
+      {"name": "telefone", "type": "text", "nullable": false, "default": ""},
+      {"name": "celular", "type": "text", "nullable": false, "default": ""},
+      {"name": "email", "type": "text", "nullable": false, "default": ""},
+      {"name": "cep", "type": "text", "nullable": false, "default": ""},
+      {"name": "estado", "type": "text", "nullable": false, "default": ""},
+      {"name": "cidade", "type": "text", "nullable": false, "default": ""},
+      {"name": "bairro", "type": "text", "nullable": false, "default": ""},
+      {"name": "endereco", "type": "text", "nullable": false, "default": ""},
+      {"name": "numero", "type": "text", "nullable": false, "default": ""},
+      {"name": "complemento", "type": "text", "nullable": false, "default": ""},
+      {"name": "status", "type": "text", "nullable": false, "default": "Ativo"},
+      {"name": "created_at", "type": "timestamptz", "nullable": false},
+      {"name": "updated_at", "type": "timestamptz", "nullable": false},
+      {"name": "guardian_name", "type": "text", "nullable": true},
+      {"name": "guardian_cpf", "type": "text", "nullable": true},
+      {"name": "consentimento_lgpd", "type": "boolean", "nullable": false, "default": false},
+      {"name": "consentimento_em", "type": "timestamptz", "nullable": true},
+      {"name": "friendly_id", "type": "text", "nullable": false, "default": ""},
+      {"name": "nome_social", "type": "text", "nullable": true}
+    ],
+    "indexes_observed": [
+      "idx_pacientes_cpf",
+      "idx_pacientes_nome",
+      "idx_pacientes_nome_id",
+      "idx_pacientes_nome_trgm",
+      "idx_pacientes_status",
+      "pacientes_cpf_unique",
+      "pacientes_friendly_id_uidx",
+      "pacientes_pkey"
+    ],
+    "policies": {
+      "select": "visualizar_pacientes",
+      "insert": "cadastrar_paciente",
+      "update": "editar_paciente",
+      "delete": "admin_only"
+    }
+  },
+  "laravel": {
+    "tenant_isolation": "database_per_laboratory",
+    "delete_endpoint": false,
+    "routes": {
+      "index": "GET /api/pacientes",
+      "show": "GET /api/pacientes/{id}",
+      "store": "POST /api/pacientes",
+      "update": "PATCH /api/pacientes/{id}"
+    },
+    "permissions": {
+      "index": "visualizar_pacientes",
+      "show": "visualizar_pacientes",
+      "store": "cadastrar_paciente",
+      "update": "editar_paciente"
+    },
+    "pagination": {
+      "strategy": "keyset_cursor",
+      "page_size": 50,
+      "order": ["updated_at DESC", "id DESC"],
+      "cursor_payload": ["updated_at", "id"],
+      "offset": false
+    },
+    "search": {
+      "cpf_partial_min_digits": 3,
+      "otherwise": "nome_case_insensitive",
+      "counts_ignore_status_filter": true,
+      "counts_respect_search": true
+    },
+    "write_normalization": {
+      "cpf": "digits_only_or_null",
+      "guardian_cpf": "digits_only_or_null",
+      "data_nascimento": "dd/MM/yyyy_to_Y-m-d_or_null",
+      "sexo": {"Masculino": "M", "Feminino": "F"},
+      "nullable_empty_to_null": ["nome_social", "guardian_name", "guardian_cpf", "consentimento_em"],
+      "protected_from_payload": ["id", "friendly_id", "created_at", "updated_at"]
+    },
+    "conflicts": {
+      "duplicate_cpf_status": 422,
+      "duplicate_cpf_message": "CPF já cadastrado para este laboratório."
+    },
+    "friendly_id": {
+      "format": "PAC-%06d",
+      "generated_server_side": true,
+      "immutable": true,
+      "counter_scope": "paciente"
+    }
+  },
+  "approved_differences": [
+    "O Laravel não replica RLS dentro do banco tenant porque cada laboratório possui banco físico isolado; autorização ocorre no plano central antes da inicialização do tenant.",
+    "Não existe endpoint DELETE nesta onda porque o frontend baseline não possui consumidor executável desse fluxo; desativação usa status Inativo.",
+    "O Laravel adiciona índice composto (updated_at,id) para a paginação keyset adotada na API; esse índice não existe no Supabase observado.",
+    "Índices físicos Supabase são inventariados como evidência, mas só são reproduzidos quando uma consulta Laravel demonstrar necessidade pelo planner/benchmark."
+  ]
+}
