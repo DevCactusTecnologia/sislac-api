@@ -17,7 +17,7 @@ final class PacienteFriendlyId
             RETURNING next_value - 1 AS value
         SQL);
 
-        $value = $row?->value ?? null;
+        $value = $row->value;
 
         if (! is_numeric($value)) {
             throw new RuntimeException('Não foi possível gerar o friendly_id do paciente.');
