@@ -10,8 +10,7 @@ use Illuminate\Http\JsonResponse;
 final readonly class ListPacientesController
 {
     public function __construct(private ListPacientes $query)
-    {
-    }
+    {}
 
     public function __invoke(ListPacientesRequest $request): JsonResponse
     {
