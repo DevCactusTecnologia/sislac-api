@@ -21,7 +21,7 @@ final readonly class CreateAtendimento
     public function handle(array $payload): array
     {
         return DB::transaction(function () use ($payload): array {
-            $data = $this->arrayValue($payload, 'atendimento');
+            $data = $this->objectValue($payload, 'atendimento');
             $idempotencyKey = $data['idempotency_key'] ?? null;
 
             if (is_string($idempotencyKey) && $idempotencyKey !== '') {
@@ -61,8 +61,8 @@ final readonly class CreateAtendimento
             $atendimento->forceFill(['protocolo' => $this->protocolos->next()]);
             $atendimento->save();
 
-            $this->persistExames($atendimento, $this->arrayValue($payload, 'exames'));
-            $this->persistPagamentos($atendimento, $this->arrayValue($payload, 'pagamentos'));
+            $this->persistExames($atendimento, $this->listValue($payload, 'exames'));
+            $this->persistPagamentos($atendimento, $this->listValue($payload, 'pagamentos'));
 
             return $this->response($atendimento, duplicate: false);
         });
@@ -70,13 +70,33 @@ final readonly class CreateAtendimento
 
     /**
      * @param  array<string, mixed>  $payload
-     * @return array<int, mixed>
+     * @return array<string, mixed>
      */
-    private function arrayValue(array $payload, string $key): array
+    private function objectValue(array $payload, string $key): array
     {
         $value = $payload[$key] ?? [];
 
-        return is_array($value) ? $value : [];
+        if (! is_array($value)) {
+            return [];
+        }
+
+        /** @var array<string, mixed> $value */
+        return $value;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<int, mixed>
+     */
+    private function listValue(array $payload, string $key): array
+    {
+        $value = $payload[$key] ?? [];
+
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values($value);
     }
 
     /**
