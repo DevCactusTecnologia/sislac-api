@@ -7,6 +7,10 @@ uses(RefreshDatabase::class);
 
 it('redireciona visitante para o login do Super Admin', function () {
     $this->get('/admin')->assertRedirect('/admin/login');
+
+    $this->get('/admin/login')
+        ->assertOk()
+        ->assertSee('Acesso administrativo');
 });
 
 it('nega o painel a usuário autenticado sem privilégio global', function () {
