@@ -80,3 +80,13 @@ it('injeta a senha do usuário da aplicação no bootstrap PostgreSQL sem fallba
         ->and($bootstrap)->toContain(":'app_password'")
         ->and($bootstrap)->not->toContain("current_setting('SISLAC_APP_PASSWORD'");
 });
+
+it('não mantém arquivos ou comandos de scaffold sem função no backend', function () {
+    $console = file_get_contents(base_path('routes/console.php'));
+
+    expect($console)->not->toContain('Inspiring')
+        ->and($console)->not->toContain("Artisan::command('inspire'")
+        ->and(file_exists(base_path('tests/Unit/ExampleTest.php')))->toBeFalse()
+        ->and(file_exists(base_path('database/migrations/tenant/.gitkeep')))->toBeFalse()
+        ->and(file_exists(public_path('favicon.ico')))->toBeFalse();
+});
