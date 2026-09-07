@@ -9,6 +9,8 @@ return new class extends Migration
 {
     public function up(): void
     {
+        DB::statement('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+
         Schema::create('friendly_id_counters', function (Blueprint $table): void {
             $table->text('scope')->primary();
             $table->unsignedBigInteger('next_value');
@@ -50,6 +52,7 @@ return new class extends Migration
         DB::statement("ALTER TABLE pacientes ADD CONSTRAINT pacientes_status_check CHECK (status IN ('Ativo', 'Inativo'))");
         DB::statement("CREATE UNIQUE INDEX pacientes_cpf_unique_nonempty ON pacientes (cpf) WHERE cpf IS NOT NULL AND cpf <> ''");
         DB::statement("CREATE UNIQUE INDEX pacientes_friendly_id_unique_nonempty ON pacientes (friendly_id) WHERE friendly_id <> ''");
+        DB::statement('CREATE INDEX idx_pacientes_nome_trgm ON pacientes USING gin (lower(nome) gin_trgm_ops)');
 
         DB::unprepared(<<<'SQL'
             CREATE FUNCTION block_paciente_friendly_id_update()
