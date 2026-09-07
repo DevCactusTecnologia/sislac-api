@@ -21,13 +21,15 @@ it('nega o painel a usuário autenticado sem privilégio global', function () {
         ->assertForbidden();
 });
 
-it('permite o painel somente ao Super Admin global', function () {
+it('permite o painel somente ao Super Admin global com navegação operacional mínima', function () {
     $user = User::factory()->create(['is_super_admin' => true]);
 
     $this->actingAs($user, 'web')
         ->get('/admin')
         ->assertOk()
-        ->assertSee('Super Admin');
+        ->assertSee('Super Admin')
+        ->assertSee(route('admin.tenants.index'), escape: false)
+        ->assertSee('Sair');
 });
 
 it('não permite elevar privilégio global por mass assignment', function () {
