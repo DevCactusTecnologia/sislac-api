@@ -9,6 +9,14 @@ return new class extends Migration
 {
     public function up(): void
     {
+        Schema::create('protocolo_sequence', function (Blueprint $table): void {
+            $table->text('prefixo');
+            $table->integer('ano');
+            $table->integer('ultimo_numero')->default(0);
+            $table->timestampTz('updated_at')->useCurrent();
+            $table->primary(['prefixo', 'ano']);
+        });
+
         Schema::create('atendimentos', function (Blueprint $table): void {
             $table->bigIncrements('id');
             $table->text('protocolo')->unique();
@@ -163,5 +171,6 @@ return new class extends Migration
         Schema::dropIfExists('atendimento_pagamentos');
         Schema::dropIfExists('atendimento_exames');
         Schema::dropIfExists('atendimentos');
+        Schema::dropIfExists('protocolo_sequence');
     }
 };
