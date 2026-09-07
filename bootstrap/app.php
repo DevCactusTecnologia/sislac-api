@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureTenantContext;
+use App\Http\Middleware\RequireSuperAdmin;
 use App\Http\Middleware\RequireTenantPermission;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -17,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->statefulApi();
         $middleware->alias([
+            'super_admin' => RequireSuperAdmin::class,
             'tenant' => EnsureTenantContext::class,
             'tenant.permission' => RequireTenantPermission::class,
         ]);
