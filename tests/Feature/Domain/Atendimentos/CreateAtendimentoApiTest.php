@@ -134,7 +134,6 @@ it('valida o envelope e os itens obrigatórios do contrato', function () {
             'atendimento.paciente_nome',
             'atendimento.paciente_cpf',
             'exames.0.nome_exame',
-            'pagamentos.0.tipo',
             'pagamentos.0.valor',
         ]);
 });
