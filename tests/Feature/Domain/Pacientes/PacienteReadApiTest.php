@@ -126,6 +126,28 @@ it('rejeita cursor estruturalmente inválido com 422', function () {
         ->assertJsonValidationErrors('cursor');
 });
 
+it('prova que o planner pode usar o índice composto da paginação por cursor', function () {
+    seedPacienteReadRows($this->readDatabase, 200);
+    $pdo = pacienteReadControlConnection($this->readDatabase);
+
+    $pdo->exec('SET enable_seqscan = off');
+
+    try {
+        $plan = $pdo->query(<<<'SQL'
+            EXPLAIN (FORMAT JSON)
+            SELECT id, updated_at
+            FROM pacientes
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 51
+        SQL)->fetchColumn();
+    } finally {
+        $pdo->exec('RESET enable_seqscan');
+    }
+
+    expect($plan)->toBeString()
+        ->and($plan)->toContain('idx_pacientes_cursor');
+});
+
 it('filtra status sem alterar os contadores globais da busca', function () {
     $pdo = pacienteReadControlConnection($this->readDatabase);
     $pdo->exec("INSERT INTO pacientes (nome, cpf, status, friendly_id) VALUES ('Maria Ativa', '11111111111', 'Ativo', 'PAC-000101')");
