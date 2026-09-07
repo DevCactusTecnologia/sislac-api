@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   quality:
-    name: Pint · Larastan · Pest
+    name: Qualidade PHP
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -27,7 +27,7 @@ jobs:
           POSTGRES_PASSWORD: sislac_ci
           POSTGRES_DB: sislac_central
         options: >-
-          --health-cmd="pg_isready -U sislac_app"
+          --health-cmd="pg_isready -U sislac_app -d sislac_central"
           --health-interval=5s
           --health-timeout=3s
           --health-retries=10
@@ -81,6 +81,9 @@ jobs:
       - name: Dependências
         run: composer install --no-interaction --no-progress --prefer-dist
 
+      - name: Composer Audit — dependências conhecidas como vulneráveis
+        run: composer audit --locked --no-interaction
+
       - name: Ambiente
         run: |
           cp .env.example .env
@@ -94,7 +97,7 @@ jobs:
           if [ -x vendor/bin/phpstan ]; then
             vendor/bin/phpstan analyse --no-progress --memory-limit=1G
           else
-            echo "::warning::Larastan ainda não instalado — rode: composer require --dev larastan/larastan"
+            echo "::warning::Larastan ainda não instalado; será gate obrigatório na Fase 1B após atualização legítima do composer.lock."
           fi
 
       - name: Pest — testes
