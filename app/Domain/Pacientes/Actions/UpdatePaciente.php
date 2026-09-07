@@ -9,6 +9,7 @@ use Illuminate\Validation\ValidationException;
 
 final class UpdatePaciente
 {
+    /** @param array<string, mixed> $attributes */
     public function execute(int $id, array $attributes): Paciente
     {
         try {
