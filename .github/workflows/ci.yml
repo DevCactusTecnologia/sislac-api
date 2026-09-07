@@ -34,16 +34,6 @@ jobs:
         ports:
           - 5432:5432
 
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd="redis-cli ping"
-          --health-interval=5s
-          --health-timeout=3s
-          --health-retries=10
-        ports:
-          - 6379:6379
-
     env:
       APP_ENV: testing
       DB_CONNECTION: central
@@ -56,9 +46,6 @@ jobs:
       TENANT_DB_PORT: 5432
       TENANT_DB_USERNAME: sislac_app
       TENANT_DB_PASSWORD: sislac_ci
-      REDIS_HOST: 127.0.0.1
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ""
 
     steps:
       - uses: actions/checkout@v4
@@ -67,7 +54,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: pdo_pgsql, pgsql, redis, intl, bcmath, gd, zip, mbstring, opcache, pcntl
+          extensions: pdo_pgsql, pgsql, intl, bcmath, gd, zip, mbstring, opcache, pcntl
           coverage: none
           tools: composer:v2
 
@@ -115,6 +102,8 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
       - name: Fronteira Platform ↔ Domain
         run: bash scripts/check-no-central-in-tenant.sh
+      - name: Escopo do backend
+        run: bash scripts/check-backend-scope.sh
       - name: Contrato PostgreSQL-only
         run: bash scripts/check-database-contract.sh
       - name: Nenhum arquivo acima de 500 KiB
