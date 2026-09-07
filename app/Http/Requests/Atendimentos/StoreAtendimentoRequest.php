@@ -54,7 +54,7 @@ final class StoreAtendimentoRequest extends FormRequest
 
             'pagamentos' => ['sometimes', 'array'],
             'pagamentos.*' => ['array'],
-            'pagamentos.*.tipo' => ['required', 'string'],
+            'pagamentos.*.tipo' => ['nullable', 'string'],
             'pagamentos.*.valor' => ['required', 'numeric'],
             'pagamentos.*.data' => ['nullable', 'date'],
         ];
