@@ -120,6 +120,12 @@ it('pagina por cursor em blocos de 50 sem repetir registros', function () {
         ->and($second->json('meta.nextCursor'))->toBeNull();
 });
 
+it('rejeita cursor estruturalmente inválido com 422', function () {
+    $this->getJson('/api/pacientes?cursor=nao-e-um-cursor')
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('cursor');
+});
+
 it('filtra status sem alterar os contadores globais da busca', function () {
     $pdo = pacienteReadControlConnection($this->readDatabase);
     $pdo->exec("INSERT INTO pacientes (nome, cpf, status, friendly_id) VALUES ('Maria Ativa', '11111111111', 'Ativo', 'PAC-000101')");
