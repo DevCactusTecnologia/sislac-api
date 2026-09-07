@@ -10,6 +10,7 @@ use Illuminate\Validation\ValidationException;
 
 final class CreatePaciente
 {
+    /** @param array<string, mixed> $attributes */
     public function execute(array $attributes, PacienteFriendlyId $friendlyId): Paciente
     {
         try {
