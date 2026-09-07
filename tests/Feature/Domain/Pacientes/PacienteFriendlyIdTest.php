@@ -3,6 +3,7 @@
 use App\Domain\Pacientes\Models\Paciente;
 use App\Domain\Pacientes\Services\PacienteFriendlyId;
 use App\Platform\Models\Tenant;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -91,5 +92,5 @@ it('impede alteração do friendly id depois de persistido', function () {
 
     expect(function () use ($paciente): void {
         $paciente->forceFill(['friendly_id' => 'PAC-999999'])->save();
-    })->toThrow(Throwable::class);
+    })->toThrow(QueryException::class, 'friendly_id de paciente é imutável');
 });
