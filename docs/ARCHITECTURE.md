@@ -67,12 +67,22 @@ em classes pequenas, nomeadas pela intenção.
 
 ## Domínio do laboratório
 
-`app/Domain` conterá pacientes, atendimentos, exames, coleta, análise,
-resultados, financeiro e demais regras do laboratório. O domínio não conhece
-`App\Platform` e não seleciona banco central.
+`app/Domain` contém pacientes e receberá, por ondas, atendimentos, exames,
+coleta, análise, resultados, financeiro e demais regras do laboratório. O
+domínio não conhece `App\Platform` e não seleciona banco central.
 
-O schema tenant será migrado por ondas, sempre comparando o comportamento do
-Laravel com o contrato executável do `sislacprivado`/Supabase antes do corte.
+A primeira onda migrada é **Pacientes**. O contrato versionado em
+`docs/contracts/pacientes.json` fixa o frontend de referência, schema físico
+observado no Supabase, permissões, serialização, filtros, paginação e
+normalizações. A API Laravel disponibiliza leitura, criação e edição; exclusão
+não integra esta onda porque o frontend fixado não possui consumidor executável
+desse fluxo.
+
+No banco tenant, `pacientes` preserva as invariantes relevantes por constraints
+e índices PostgreSQL. A busca case-insensitive por nome usa `pg_trgm` com GIN;
+a paginação usa keyset por `(updated_at,id)`. Ambos os planos são exercitados
+com `EXPLAIN (ANALYZE, BUFFERS)` em testes de integração, sem impor números de
+latência artificiais ao runner de CI.
 
 ## Fronteira Platform ↔ Domain
 
@@ -122,9 +132,16 @@ SHA do frontend, PostgreSQL major, fingerprints dos artefatos geradores,
 inventário estrutural, superfície consumida, storage, Edge Functions, realtime
 e findings conhecidos. Não contém linhas clínicas nem credenciais.
 
+Cada onda de domínio acrescenta um contrato específico. Para Pacientes,
+`docs/contracts/pacientes.json` registra a tabela `public.pacientes`, RLS e
+políticas observadas, índices relevantes, endpoints Laravel e diferenças
+arquiteturais aprovadas. O Laravel não simula RLS entre laboratórios dentro de
+uma mesma tabela: o isolamento primário é físico, um banco por laboratório, e
+a autorização central ocorre antes da inicialização do banco tenant.
+
 O gate `scripts/check-supabase-contract.php` valida integridade e contagens
-determinísticas desse manifesto no CI. Mudança de superfície do frontend exige
-atualização explícita da baseline antes de uma nova onda de migração.
+determinísticas do manifesto global no CI. Mudança de superfície do frontend
+exige atualização explícita da baseline antes de uma nova onda de migração.
 
 Nenhum objeto é removido ou reescrito apenas porque aparenta estar sem uso. A
 classificação de equivalência ocorre por onda de domínio, com evidência do
@@ -137,10 +154,12 @@ contrato executável do frontend/Supabase.
 | 0 | Laravel, Docker, CI, docs e health check | concluída |
 | 1A | PostgreSQL 17, plano central, UUID, constraints e seleção de tenant | concluída |
 | 1B | Boost, Sanctum, stancl/tenancy, isolamento e provisionamento | concluída |
-| 2 | PDF, WhatsApp oficial, integrações, Horizon/Reverb | pendente |
-| 3 | endpoints de domínio e adaptação progressiva do frontend | pendente |
+| 2A | primeira onda de domínio: Pacientes | em validação final |
+| 2B | Atendimentos → Coleta → Análise → Resultados → Financeiro | pendente |
+| 3 | adaptação progressiva do frontend para HTTP Laravel | pendente |
 | 4 | migração de dados e corte do Supabase | pendente |
-| 5 | SaaS comercial | pendente |
+| 5 | PDF, WhatsApp oficial, integrações e serviços operacionais restantes | pendente |
+| 6 | SaaS comercial | pendente |
 
 ## Gates de engenharia
 
