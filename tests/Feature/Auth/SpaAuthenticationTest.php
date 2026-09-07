@@ -5,6 +5,10 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function () {
+    $this->withHeader('Origin', 'https://sislac.com.br');
+});
+
 it('autentica a SPA e expõe somente os campos públicos do usuário', function () {
     $user = User::factory()->create([
         'name' => 'Ana Laboratório',
