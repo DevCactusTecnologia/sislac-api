@@ -20,7 +20,7 @@ final class StoreAtendimentoRequest extends FormRequest
             'atendimento.data' => ['nullable', 'date'],
             'atendimento.paciente_id' => ['nullable', 'integer'],
             'atendimento.paciente_nome' => ['required', 'string'],
-            'atendimento.paciente_cpf' => ['present', 'string'],
+            'atendimento.paciente_cpf' => ['present', 'nullable', 'string'],
             'atendimento.paciente_nascimento' => ['nullable', 'date'],
             'atendimento.solicitante' => ['nullable', 'string'],
             'atendimento.convenio_id' => ['nullable', 'integer'],
@@ -64,15 +64,18 @@ final class StoreAtendimentoRequest extends FormRequest
     {
         $atendimento = $this->input('atendimento');
 
-        if (! is_array($atendimento)) {
+        if (! is_array($atendimento) || ! array_key_exists('paciente_cpf', $atendimento)) {
             return;
         }
 
-        $cpf = $atendimento['paciente_cpf'] ?? null;
+        $cpf = $atendimento['paciente_cpf'];
 
-        if (is_string($cpf)) {
+        if ($cpf === null) {
+            $atendimento['paciente_cpf'] = '';
+        } elseif (is_string($cpf)) {
             $atendimento['paciente_cpf'] = preg_replace('/\D+/', '', $cpf) ?? '';
-            $this->merge(['atendimento' => $atendimento]);
         }
+
+        $this->merge(['atendimento' => $atendimento]);
     }
 }
