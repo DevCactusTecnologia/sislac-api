@@ -128,7 +128,7 @@ return new class extends Migration
         DB::statement("ALTER TABLE atendimento_exames ADD CONSTRAINT atendimento_exames_status_externo_check CHECK (status_externo IN ('NAO_APLICAVEL', 'AGUARDANDO_ENVIO', 'ENVIADO', 'EM_ANALISE_LAB', 'RESULTADO_RECEBIDO', 'IMPORTADO', 'FINALIZADO', 'ERRO_INTEGRACAO'))");
         DB::statement("ALTER TABLE atendimento_exames ADD CONSTRAINT atendimento_exames_tipo_processo_check CHECK (tipo_processo IN ('INTERNO', 'TERCEIRIZADO'))");
         DB::statement("ALTER TABLE atendimento_exames ADD CONSTRAINT atex_cobranca_destino_chk CHECK (cobranca_destino IN ('paciente', 'convenio'))");
-        DB::statement("CREATE UNIQUE INDEX atendimento_exames_unico_amostra ON atendimento_exames (atendimento_id, COALESCE(exame_id::text, lower(nome_exame)), amostra_seq)");
+        DB::statement('CREATE UNIQUE INDEX atendimento_exames_unico_amostra ON atendimento_exames (atendimento_id, COALESCE(exame_id::text, lower(nome_exame)), amostra_seq)');
         DB::statement('CREATE INDEX idx_atendimentos_nome_trgm ON atendimentos USING gin (lower(paciente_nome) gin_trgm_ops)');
         DB::statement('CREATE INDEX idx_atendimentos_protocolo_trgm ON atendimentos USING gin (lower(protocolo) gin_trgm_ops)');
     }
