@@ -12,7 +12,7 @@ check). O código de domínio entra nas fases seguintes.
 ## Rodar no PC (Windows + Laravel Herd)
 
 Pré-requisitos: [Laravel Herd](https://herd.laravel.com) (PHP 8.4 + Composer) e
-um PostgreSQL 16 local — o mais simples é o do Docker Desktop, via compose:
+um PostgreSQL 17 local — o mais simples é o do Docker Desktop, via compose:
 
 ```powershell
 composer install
@@ -26,10 +26,15 @@ docker compose up -d postgres redis pgadmin
 php artisan migrate
 ```
 
-Sem Docker: instale o PostgreSQL 16 para Windows, crie o papel `sislac_app` e o
+Sem Docker: instale o PostgreSQL 17 para Windows, crie o papel `sislac_app` e o
 banco `sislac_central` (o SQL está em
 [docker/postgres/init/01-create-central.sql](docker/postgres/init/01-create-central.sql))
 e aponte o `.env` para ele.
+
+> **Volume local antigo:** não aponte PostgreSQL 17 diretamente para um
+> `postgres_data` inicializado pelo PostgreSQL 16. Migre o volume com as
+> ferramentas oficiais do PostgreSQL ou recrie-o somente quando os dados forem
+> comprovadamente descartáveis. Nunca remova um volume sem backup/verificação.
 
 Abra `http://sislac-api.test/api/health` (Herd usa o nome da pasta do projeto)
 ou rode `php artisan serve` e use `http://127.0.0.1:8000/api/health`. Resposta
@@ -50,10 +55,11 @@ vendor\bin\pest               # testes
 vendor\bin\phpstan analyse    # análise estática (depois de instalar o Larastan)
 ```
 
-O CI (GitHub Actions) roda Pint, Larastan e Pest contra um PostgreSQL 16 real,
-mais os guards de repositório (`scripts/`): fronteira Platform ↔ Domain, nenhum
-arquivo acima de 500 KiB, nenhum `.env` comitado. Nada entra em `main` sem
-isso verde.
+O CI (GitHub Actions) roda Pint e Pest contra um PostgreSQL 17 real, além dos
+guards de repositório (`scripts/`): fronteira Platform ↔ Domain, nenhum arquivo
+acima de 500 KiB, nenhum `.env` comitado. A etapa Larastan permanece como aviso
+enquanto a dependência ainda não estiver instalada legitimamente no lockfile.
+Nada entra em `main` sem os gates efetivamente disponíveis verdes.
 
 Para ligar o Larastan (a etapa fica como aviso até então):
 
@@ -94,7 +100,7 @@ scripts/            # guards executados no CI
 | Fase | Escopo | Estado |
 |------|--------|--------|
 | 0 | Laravel + Docker + CI + docs + health check | **concluída** |
-| 1 | Banco central, tenancy multi-database (`stancl/tenancy`), Sanctum, super-admin (Filament), provisionamento | próxima |
+| 1 | Banco central, tenancy multi-database (`stancl/tenancy`), Sanctum, super-admin (Filament), provisionamento | **em implementação** |
 | 2 | PDF (Chromium), WhatsApp Cloud API, integrações de apoio, Horizon/Reverb | pendente |
 | 3 | Endpoints de domínio; front Lovable passa a consumir esta API | pendente |
 | 4 | Migração dos dados do Supabase e corte | pendente |

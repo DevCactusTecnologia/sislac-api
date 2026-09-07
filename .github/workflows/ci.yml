@@ -21,7 +21,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: sislac_app
           POSTGRES_PASSWORD: sislac_ci
@@ -45,8 +45,8 @@ jobs:
           - 6379:6379
 
     # Os testes rodam contra o Postgres do serviço acima (a conexão `central`),
-    # não contra SQLite: é o mesmo motor da produção. As variáveis do sistema
-    # têm prioridade sobre o phpunit.xml e sobre o .env.
+    # não contra SQLite: é o mesmo major do PostgreSQL da produção Supabase.
+    # As variáveis do sistema têm prioridade sobre o phpunit.xml e sobre o .env.
     env:
       APP_ENV: testing
       DB_CONNECTION: central
