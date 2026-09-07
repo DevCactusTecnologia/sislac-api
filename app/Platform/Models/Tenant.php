@@ -22,8 +22,6 @@ final class Tenant extends Model implements TenantWithDatabase
     protected $fillable = [
         'name',
         'code',
-        'status',
-        'database_name',
     ];
 
     public function getTenantKeyName(): string
