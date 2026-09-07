@@ -141,6 +141,8 @@ it('permite ao planner usar trigram na busca case insensitive por nome', functio
     $decoded = json_decode((string) $raw, true, flags: JSON_THROW_ON_ERROR);
     $plan = $decoded[0]['Plan'];
 
+    fwrite(STDERR, "\nPACIENTE_NAME_PLAN=".json_encode($plan, JSON_THROW_ON_ERROR)."\n");
+
     expect(pacientePlanUsesIndex($plan, 'idx_pacientes_nome_trgm'))->toBeTrue()
         ->and($plan['Actual Rows'])->toBeLessThanOrEqual(51);
 });
