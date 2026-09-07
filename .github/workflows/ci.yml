@@ -52,6 +52,10 @@ jobs:
       DB_DATABASE: sislac_central
       DB_USERNAME: sislac_app
       DB_PASSWORD: sislac_ci
+      TENANT_DB_HOST: 127.0.0.1
+      TENANT_DB_PORT: 5432
+      TENANT_DB_USERNAME: sislac_app
+      TENANT_DB_PASSWORD: sislac_ci
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: 6379
       REDIS_PASSWORD: ""
