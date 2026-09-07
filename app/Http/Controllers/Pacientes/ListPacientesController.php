@@ -3,14 +3,15 @@
 namespace App\Http\Controllers\Pacientes;
 
 use App\Domain\Pacientes\Queries\ListPacientes;
-use App\Http\Controllers\Controller;
 use App\Http\Requests\Pacientes\ListPacientesRequest;
 use App\Http\Resources\Pacientes\PacienteResource;
 use Illuminate\Http\JsonResponse;
 
 final readonly class ListPacientesController
 {
-    public function __construct(private ListPacientes $query) {}
+    public function __construct(private ListPacientes $query)
+    {
+    }
 
     public function __invoke(ListPacientesRequest $request): JsonResponse
     {
