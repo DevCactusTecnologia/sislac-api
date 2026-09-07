@@ -43,3 +43,32 @@ it('não provisiona Redis Horizon ou Reverb sem consumidor real', function () {
         ->and($ci)->not->toContain('redis:7-alpine')
         ->and($ci)->not->toContain('extensions: pdo_pgsql, pgsql, redis');
 });
+
+it('não mantém configuração futura sem consumidor na fundação', function () {
+    $env = file_get_contents(base_path('.env.example'));
+    $filesystems = file_get_contents(config_path('filesystems.php'));
+    $services = file_get_contents(config_path('services.php'));
+    $deploy = file_get_contents(base_path('docs/DEPLOY.md'));
+
+    foreach ([
+        'TENANT_DB_NAME_PREFIX',
+        'WHATSAPP_META_',
+        'PDF_SHARE_SECRET',
+        'INTERNAL_WEBHOOK_SECRET',
+        'AWS_ACCESS_KEY_ID',
+        'AWS_SECRET_ACCESS_KEY',
+        'AWS_BUCKET',
+        'AWS_ENDPOINT',
+        'AWS_USE_PATH_STYLE_ENDPOINT',
+    ] as $orphan) {
+        expect($env)->not->toContain($orphan);
+    }
+
+    expect($filesystems)->not->toContain("'s3' => [")
+        ->and($services)->not->toContain("'ses' => [")
+        ->and($deploy)->not->toContain('Redis')
+        ->and($deploy)->not->toContain('Horizon')
+        ->and($deploy)->not->toContain('Reverb')
+        ->and($deploy)->not->toContain('PDF_SHARE_SECRET')
+        ->and($deploy)->not->toContain('INTERNAL_WEBHOOK_SECRET');
+});
