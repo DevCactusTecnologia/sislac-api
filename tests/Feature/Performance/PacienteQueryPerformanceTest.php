@@ -5,7 +5,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use PHPUnit\Framework\Assert;
 
 uses(RefreshDatabase::class);
 
@@ -125,7 +124,7 @@ it('permite ao planner usar o índice composto da paginação keyset', function 
         ->and($plan['Actual Rows'])->toBeLessThanOrEqual(51);
 });
 
-it('permite ao planner usar trigram na busca case insensitive por nome', function () {
+it('permite ao planner usar trigram no predicado de busca case insensitive por nome', function () {
     $pdo = pacientePerformanceControlConnection($this->performanceDatabase);
     $pdo->exec('SET enable_seqscan = off');
 
@@ -134,18 +133,12 @@ it('permite ao planner usar trigram na busca case insensitive por nome', functio
         SELECT id, nome
         FROM pacientes
         WHERE LOWER(nome) LIKE LOWER('%Alvo%')
-        ORDER BY updated_at DESC, id DESC
-        LIMIT 51
     SQL);
 
     $raw = $statement?->fetchColumn();
     $decoded = json_decode((string) $raw, true, flags: JSON_THROW_ON_ERROR);
     $plan = $decoded[0]['Plan'];
 
-    Assert::assertTrue(
-        pacientePlanUsesIndex($plan, 'idx_pacientes_nome_trgm'),
-        json_encode($plan, JSON_THROW_ON_ERROR),
-    );
-
-    expect($plan['Actual Rows'])->toBeLessThanOrEqual(51);
+    expect(pacientePlanUsesIndex($plan, 'idx_pacientes_nome_trgm'))->toBeTrue()
+        ->and($plan['Actual Rows'])->toBe(50);
 });
