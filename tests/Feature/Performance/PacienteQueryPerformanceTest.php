@@ -5,6 +5,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Assert;
 
 uses(RefreshDatabase::class);
 
@@ -141,8 +142,10 @@ it('permite ao planner usar trigram na busca case insensitive por nome', functio
     $decoded = json_decode((string) $raw, true, flags: JSON_THROW_ON_ERROR);
     $plan = $decoded[0]['Plan'];
 
-    fwrite(STDERR, "\nPACIENTE_NAME_PLAN=".json_encode($plan, JSON_THROW_ON_ERROR)."\n");
+    Assert::assertTrue(
+        pacientePlanUsesIndex($plan, 'idx_pacientes_nome_trgm'),
+        json_encode($plan, JSON_THROW_ON_ERROR),
+    );
 
-    expect(pacientePlanUsesIndex($plan, 'idx_pacientes_nome_trgm'))->toBeTrue()
-        ->and($plan['Actual Rows'])->toBeLessThanOrEqual(51);
+    expect($plan['Actual Rows'])->toBeLessThanOrEqual(51);
 });
