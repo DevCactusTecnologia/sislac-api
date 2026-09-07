@@ -36,7 +36,7 @@ final readonly class TenantProvisioner
             );
 
             $finishedAt = now();
-            DB::connection('central')->table('provisioning_runs')->whereKey($runId)->update([
+            DB::connection('central')->table('provisioning_runs')->where('id', $runId)->update([
                 'status' => 'succeeded',
                 'schema_version' => $this->schemaVersion(),
                 'finished_at' => $finishedAt,
@@ -54,12 +54,12 @@ final readonly class TenantProvisioner
         } catch (Throwable $exception) {
             $finishedAt = now();
 
-            DB::connection('central')->table('tenants')->whereKey($tenant->getKey())->update([
+            DB::connection('central')->table('tenants')->where('id', $tenant->getKey())->update([
                 'status' => 'provisioning_failed',
                 'updated_at' => $finishedAt,
             ]);
 
-            DB::connection('central')->table('provisioning_runs')->whereKey($runId)->update([
+            DB::connection('central')->table('provisioning_runs')->where('id', $runId)->update([
                 'status' => 'failed',
                 'finished_at' => $finishedAt,
                 'duration_ms' => $this->durationMs($startedNs),
@@ -112,7 +112,7 @@ final readonly class TenantProvisioner
             $this->tenancy->end();
         }
 
-        DB::connection('central')->table('tenants')->whereKey($tenant->getKey())->update([
+        DB::connection('central')->table('tenants')->where('id', $tenant->getKey())->update([
             'status' => 'active',
             'updated_at' => now(),
         ]);
