@@ -5,7 +5,7 @@ Domínio da API: `api.sislac.com.br`. O front (Lovable/Vercel) continua em
 
 Este guia cobre o **primeiro deploy** de uma VPS zerada. A VPS hospeda:
 
-- **PostgreSQL 16** (via Docker Compose) — todos os bancos: `sislac_central` e
+- **PostgreSQL 17** (via Docker Compose) — todos os bancos: `sislac_central` e
   `sislac_t_XXXX`.
 - **Redis 7** — cache, filas, sessão, rate limit.
 - **Nginx (público)** — TLS via Let's Encrypt, faz `proxy_pass` para o Nginx
@@ -89,9 +89,6 @@ INTERNAL_WEBHOOK_SECRET=...
 
 Os hosts (`DB_HOST`, `REDIS_HOST`…) podem ficar como no exemplo: dentro do
 compose o `docker-compose.yml` já os sobrescreve para `postgres` e `redis`.
-
-```bash
-```
 
 ## 4 · Subir o compose
 
