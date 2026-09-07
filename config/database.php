@@ -37,9 +37,9 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
-        // Molde da conexão por laboratório. O banco é preenchido apenas após
-        // autenticação e autorização central do tenant da requisição.
-        'tenant' => [
+        // Template usado pelo stancl/tenancy. A conexão runtime `tenant` é
+        // criada dinamicamente pelo pacote após autorização central.
+        'tenant_template' => [
             'driver' => 'pgsql',
             'host' => env('TENANT_DB_HOST', env('DB_HOST', '127.0.0.1')),
             'port' => env('TENANT_DB_PORT', env('DB_PORT', '5432')),
