@@ -36,6 +36,11 @@ final class Tenant extends Model implements TenantWithDatabase
         return $this->getKey();
     }
 
+    public static function internalPrefix(): string
+    {
+        return 'tenancy_';
+    }
+
     public function getInternal(string $key): mixed
     {
         return match ($key) {
