@@ -54,12 +54,14 @@ final readonly class EnsureTenantContext
             return $this->forbidden();
         }
 
+        $request->attributes->set('tenant_id', $tenantId);
         $this->tenancy->initialize($tenant);
 
         try {
             return $next($request);
         } finally {
             $this->tenancy->end();
+            $request->attributes->remove('tenant_id');
         }
     }
 
