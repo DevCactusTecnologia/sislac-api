@@ -32,6 +32,10 @@ fase de corte; este backend é desenvolvido em paralelo por ondas verificáveis.
 7. **WhatsApp só pela Cloud API oficial da Meta.** Nunca Baileys ou libs não
    oficiais.
 8. **Sem `git push --force` em `main`.** Sem commit que quebre os gates do CI.
+9. **Backend simples e funcional.** Este repositório é uma API, não uma
+   plataforma genérica. Não criar camada, pacote, painel, barramento, DTO,
+   repository, event bus, CQRS, cache, fila ou abstração “para o futuro” sem
+   consumidor real e necessidade demonstrada no fluxo atual.
 
 ## Como trabalhar
 
@@ -44,6 +48,14 @@ fase de corte; este backend é desenvolvido em paralelo por ondas verificáveis.
 - **YAGNI e DRY com critério.** Não antecipe extensibilidade e não abstraia uma
   única chamada apenas para reduzir linhas. Extraia quando houver regra de negócio,
   reutilização real ou isolamento que melhore o teste e a leitura.
+- **Prefira o caminho mais curto do Laravel.** Route + middleware + Form Request +
+  controller/action + Eloquent/Query Builder é o padrão. Só adicione outra camada
+  quando ela eliminar duplicação real, isolar uma regra relevante ou for exigida
+  por segurança/transação/testabilidade.
+- **Nenhum módulo futuro por antecipação.** Atendimentos, coleta, análise,
+  resultados, financeiro e integrações entram somente na própria onda, a partir
+  do contrato executável correspondente. Pacientes não deve carregar abstrações
+  desses módulos.
 - **TDD para comportamento.** Novo comportamento nasce de um teste que falha pelo
   motivo esperado, recebe a implementação mínima correta e volta a ficar verde.
 - Formatação: `vendor/bin/pint` (preset `laravel`, sem regras extras).
