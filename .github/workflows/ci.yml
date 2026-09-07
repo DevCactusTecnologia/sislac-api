@@ -44,9 +44,6 @@ jobs:
         ports:
           - 6379:6379
 
-    # Os testes rodam contra o Postgres do serviço acima (a conexão `central`),
-    # não contra SQLite: é o mesmo major do PostgreSQL da produção Supabase.
-    # As variáveis do sistema têm prioridade sobre o phpunit.xml e sobre o .env.
     env:
       APP_ENV: testing
       DB_CONNECTION: central
@@ -113,6 +110,8 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
       - name: Fronteira Platform ↔ Domain
         run: bash scripts/check-no-central-in-tenant.sh
+      - name: Contrato PostgreSQL-only
+        run: bash scripts/check-database-contract.sh
       - name: Nenhum arquivo acima de 500 KiB
         run: bash scripts/check-file-size.sh
       - name: Nenhum .env comitado
