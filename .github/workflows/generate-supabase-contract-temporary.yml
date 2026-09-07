@@ -1,0 +1,139 @@
+name: Generate Supabase contract temporary
+
+on:
+  push:
+    branches:
+      - feat/fase-1-conformidade-laravel-supabase
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fixar frontend observado
+        run: |
+          git clone --quiet https://github.com/DevCactusTecnologia/sislacprivado.git /tmp/sislacprivado
+          git -C /tmp/sislacprivado checkout --quiet 0760c6123f3062842eaff5f7304b6460c00c058d
+
+      - name: Gerar manifesto somente de metadados de código
+        run: |
+          mkdir -p docs/contracts
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const crypto = require('crypto');
+
+          const root = '/tmp/sislacprivado';
+          const skip = new Set(['node_modules', 'dist', 'coverage', 'playwright-report', 'docs', '.git', 'test-results']);
+          const extensions = new Set(['.ts', '.tsx', '.js', '.mjs']);
+          const scanRoots = ['src', 'supabase/functions', 'api'];
+          const refs = { tables: new Set(), rpcs: new Set(), edge_functions: new Set(), buckets: new Set(), realtime_tables: new Set() };
+          const patterns = {
+            tables: /\.from\(\s*["']([^"']+)["']\s*\)/g,
+            rpcs: /\.rpc\(\s*["']([^"']+)["']/g,
+            edge_functions: /\.functions\.invoke\(\s*["']([^"']+)["']/g,
+            buckets: /\.storage\s*\n?\s*\.from\(\s*["']([^"']+)["']\s*\)/g,
+          };
+
+          function walk(dir) {
+            const files = [];
+            if (!fs.existsSync(dir)) return files;
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (skip.has(entry.name)) continue;
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) files.push(...walk(full));
+              else if (extensions.has(path.extname(entry.name)) && !/(_test\.|\.test\.|\.spec\.)/.test(entry.name)) files.push(full);
+            }
+            return files;
+          }
+
+          for (const scanRoot of scanRoots) {
+            for (const file of walk(path.join(root, scanRoot))) {
+              const source = fs.readFileSync(file, 'utf8');
+              for (const [kind, pattern] of Object.entries(patterns)) {
+                pattern.lastIndex = 0;
+                for (const match of source.matchAll(pattern)) refs[kind].add(match[1]);
+              }
+              for (const match of source.matchAll(/postgres_changes[\s\S]{0,500}?table:\s*["']([^"']+)["']/g)) {
+                refs.realtime_tables.add(match[1]);
+              }
+            }
+          }
+
+          const bucketInventory = JSON.parse(fs.readFileSync(path.join(root, 'supabase/storage-buckets.json'), 'utf8'));
+          const allBuckets = bucketInventory.buckets.map((bucket) => bucket.id).sort();
+          for (const bucket of allBuckets) refs.tables.delete(bucket);
+
+          const types = fs.readFileSync(path.join(root, 'src/integrations/supabase/types.ts'), 'utf8');
+          function section(header) {
+            const start = types.indexOf(header);
+            if (start < 0) return '';
+            const rest = types.slice(start + header.length);
+            const end = rest.search(/\n {4}\w+: \{/);
+            return end < 0 ? rest : rest.slice(0, end);
+          }
+          function keys(block) {
+            return [...block.matchAll(/\n {6}([A-Za-z_][A-Za-z0-9_]*): \{/g)].map((match) => match[1]).sort();
+          }
+
+          const tablesAvailable = new Set(keys(section('    Tables: {')));
+          const viewsAvailable = new Set(keys(section('    Views: {')));
+          const consumedTables = [...refs.tables].filter((name) => tablesAvailable.has(name)).sort();
+          const consumedViews = [...refs.tables].filter((name) => viewsAvailable.has(name)).sort();
+          const enumNames = keys(section('    Enums: {'));
+
+          const manifest = {
+            version: 1,
+            captured_at: '2026-09-07',
+            frontend: {
+              repository: 'DevCactusTecnologia/sislacprivado',
+              sha: '0760c6123f3062842eaff5f7304b6460c00c058d',
+            },
+            supabase: {
+              project_ref: 'eramenhnqcbyctyiqwlm',
+              postgres_major: 17,
+            },
+            runtime: {
+              tables: consumedTables,
+              views: consumedViews,
+              enums: enumNames,
+              rpcs: [...refs.rpcs].sort(),
+              edge_functions: [...refs.edge_functions].sort(),
+              buckets: [...refs.buckets].sort(),
+              storage_inventory: allBuckets,
+              realtime_tables: [...refs.realtime_tables].sort(),
+            },
+            counts: {
+              tables_views: refs.tables.size,
+              rpcs: refs.rpcs.size,
+              edge_functions: refs.edge_functions.size,
+              buckets: refs.buckets.size,
+              storage_inventory: allBuckets.length,
+              realtime_tables: refs.realtime_tables.size,
+            },
+          };
+
+          const canonical = JSON.stringify(manifest);
+          manifest.sha256 = crypto.createHash('sha256').update(canonical).digest('hex');
+          fs.writeFileSync('docs/contracts/supabase-baseline.json', JSON.stringify(manifest, null, 2) + '\n');
+          NODE
+
+      - name: Validar contagens conhecidas do gate frontend
+        run: |
+          node -e 'const m=require("./docs/contracts/supabase-baseline.json"); if(m.counts.tables_views!==77||m.counts.rpcs!==52||m.counts.edge_functions!==23||m.counts.buckets!==4) { console.error(m.counts); process.exit(1) }'
+
+      - name: Versionar manifesto e remover gerador temporário
+        run: |
+          rm .github/workflows/generate-supabase-contract-temporary.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/contracts/supabase-baseline.json .github/workflows/generate-supabase-contract-temporary.yml
+          git diff --cached --check
+          git commit -m "test: versiona contrato completo com Supabase"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
