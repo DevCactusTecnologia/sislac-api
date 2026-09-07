@@ -20,16 +20,16 @@ afterEach(function () {
     }
 });
 
-function postgresControlConnection(?string $database = null): \PDO
+function postgresControlConnection(?string $database = null): PDO
 {
     $config = config('database.connections.central');
     $database ??= 'postgres';
 
-    return new \PDO(
+    return new PDO(
         sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
         (string) $config['username'],
         (string) $config['password'],
-        [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION],
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
     );
 }
 
