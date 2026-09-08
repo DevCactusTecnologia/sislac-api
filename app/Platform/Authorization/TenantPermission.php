@@ -8,4 +8,5 @@ enum TenantPermission: string
     case CreatePatient = 'cadastrar_paciente';
     case EditPatient = 'editar_paciente';
     case ViewAppointments = 'visualizar_atendimentos';
+    case CreateAppointment = 'criar_atendimento';
 }
