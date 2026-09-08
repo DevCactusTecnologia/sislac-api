@@ -71,7 +71,9 @@ final class UpdateAtendimentoController extends Controller
             return response()->json(['message' => $exception->getMessage()], 409);
         }
 
-        return (new AtendimentoResource($atendimento))->response();
+        return response()->json([
+            'data' => (new AtendimentoResource($atendimento))->resolve($request),
+        ]);
     }
 
     /** @param array<string, mixed> $payload */
