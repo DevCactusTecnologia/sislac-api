@@ -8,7 +8,6 @@ use App\Http\Requests\Atendimentos\UpdateAtendimentoRequest;
 use App\Http\Resources\Atendimentos\AtendimentoResource;
 use App\Platform\Authorization\MembershipAuthorizer;
 use App\Platform\Authorization\TenantPermission;
-use App\Platform\Models\User;
 use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
@@ -56,9 +55,10 @@ final class UpdateAtendimentoController extends Controller
         unset($payload['justificativa']);
 
         $payload['_audit_user_id'] = $userId;
+        $userEmail = $user?->getAttribute('email');
 
-        if ($user instanceof User) {
-            $payload['_audit_user_email'] = $user->email;
+        if (is_string($userEmail)) {
+            $payload['_audit_user_email'] = $userEmail;
         }
 
         try {
