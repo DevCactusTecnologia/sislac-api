@@ -113,6 +113,7 @@ function validAtendimentoCreatePayload(?string $idempotencyKey = null): array
                 'ordem' => 1,
                 'tipo_processo' => 'INTERNO',
                 'amostra_seq' => 1,
+                'solicitante' => 'Dr. Solicitante do Exame',
             ],
             [
                 'nome_exame' => 'Vitamina D Apoio',
@@ -165,7 +166,7 @@ it('cria pai exames e pagamentos em uma única operação com campos protegidos 
     ]);
 
     $exames = $pdo->query(sprintf(
-        'SELECT nome_exame, status, valor::text, valor_original::text, tipo_processo FROM atendimento_exames WHERE atendimento_id = %d ORDER BY ordem',
+        'SELECT nome_exame, status, valor::text, valor_original::text, tipo_processo, solicitante FROM atendimento_exames WHERE atendimento_id = %d ORDER BY ordem',
         $id,
     ))?->fetchAll(PDO::FETCH_ASSOC);
 
@@ -176,6 +177,7 @@ it('cria pai exames e pagamentos em uma única operação com campos protegidos 
             'valor' => '100.00',
             'valor_original' => '100.00',
             'tipo_processo' => 'INTERNO',
+            'solicitante' => 'Dr. Solicitante do Exame',
         ],
         [
             'nome_exame' => 'Vitamina D Apoio',
@@ -183,9 +185,24 @@ it('cria pai exames e pagamentos em uma única operação com campos protegidos 
             'valor' => '50.00',
             'valor_original' => '60.00',
             'tipo_processo' => 'TERCEIRIZADO',
+            'solicitante' => '',
         ],
     ])
         ->and((int) $pdo->query('SELECT count(*) FROM atendimento_pagamentos WHERE atendimento_id = '.$id)?->fetchColumn())->toBe(1);
+});
+
+it('mantém concordância com o baseline quando paciente não possui cpf', function () {
+    $payload = validAtendimentoCreatePayload();
+    unset($payload['paciente_cpf']);
+
+    $response = $this->postJson('/api/atendimentos', $payload)
+        ->assertCreated();
+
+    $id = (int) $response->json('atendimento_id');
+    $pdo = atendimentoCreateControlConnection($this->atendimentoCreateDatabase);
+
+    expect((string) $pdo->query("SELECT paciente_cpf FROM atendimentos WHERE id = {$id}")?->fetchColumn())
+        ->toBe('');
 });
 
 it('repete a mesma idempotency key retornando o mesmo atendimento sem duplicar filhos', function () {
