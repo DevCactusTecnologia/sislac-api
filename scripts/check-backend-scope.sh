@@ -67,6 +67,14 @@ for scaffold in tests/Unit/ExampleTest.php database/migrations/tenant/.gitkeep p
   [ ! -e "$scaffold" ] || fail "Arquivo de scaffold sem função reapareceu: $scaffold"
 done
 
+for frontend_orphan in package.json .npmrc vite.config.js resources/css/app.css; do
+  [ ! -e "$frontend_orphan" ] || fail "Pipeline frontend sem consumidor reapareceu: $frontend_orphan"
+done
+
+if grep -Eq 'npm install|npm run build' composer.json; then
+  fail "Composer voltou a depender de pipeline frontend inexistente."
+fi
+
 if grep -R -nE "DB::connection\(['\"]supabase_source['\"]\)" app --include='*.php' \
   | grep -v '^app/Platform/Supabase/SupabaseSource.php:'; then
   fail "supabase_source só pode ser aberto por App\\Platform\\Supabase\\SupabaseSource."
