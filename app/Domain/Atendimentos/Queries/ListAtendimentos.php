@@ -7,6 +7,7 @@ use App\Domain\Atendimentos\Support\AtendimentoCursor;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use LogicException;
 
 final class ListAtendimentos
 {
@@ -73,8 +74,14 @@ final class ListAtendimentos
         if ($hasMore && $data->isNotEmpty()) {
             /** @var Atendimento $last */
             $last = $data->last();
+            $cursorData = $last->getAttribute('data');
+
+            if (! $cursorData instanceof CarbonImmutable) {
+                throw new LogicException('Data de atendimento inválida para paginação.');
+            }
+
             $nextCursor = AtendimentoCursor::encode(
-                $last->data->toISOString(),
+                $cursorData->toISOString(),
                 (int) $last->getKey(),
             );
         }
@@ -109,12 +116,12 @@ final class ListAtendimentos
         $timezone = (string) config('app.timezone', 'UTC');
         $dataInicio = $filters['data_inicio'] ?? null;
         if (is_string($dataInicio) && $dataInicio !== '') {
-            $query->where('data', '>=', CarbonImmutable::createFromFormat('Y-m-d', $dataInicio, $timezone)->startOfDay());
+            $query->where('data', '>=', CarbonImmutable::parse($dataInicio, $timezone)->startOfDay());
         }
 
         $dataFim = $filters['data_fim'] ?? null;
         if (is_string($dataFim) && $dataFim !== '') {
-            $query->where('data', '<', CarbonImmutable::createFromFormat('Y-m-d', $dataFim, $timezone)->addDay()->startOfDay());
+            $query->where('data', '<', CarbonImmutable::parse($dataFim, $timezone)->addDay()->startOfDay());
         }
 
         $search = trim((string) ($filters['q'] ?? ''));
