@@ -16,7 +16,7 @@ O frontend React/Vite existente permanece em uso durante a migração. O Supabas
 - o **Super Admin é totalmente Laravel**, server-rendered, sem criar outro SPA;
 - o Supabase não é alterado destrutivamente até a equivalência de cada onda estar comprovada.
 
-Não fazem parte da fundação atual Redis, Horizon, Reverb, CQRS, event bus, repositories genéricos, DTOs preventivos ou qualquer outra camada sem consumidor real.
+Não fazem parte da fundação atual Redis, Horizon, Reverb, CQRS, event bus, repositories genéricos, DTOs preventivos ou pipeline frontend próprio sem consumidor real.
 
 Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -26,14 +26,15 @@ Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - banco central e database-per-lab: concluídos;
 - Sanctum e autorização central: concluídos;
 - provisionamento idempotente de novo laboratório: concluído e testado;
+- conexão `supabase_source` de leitura/concordância: implementada e protegida contra escrita acidental;
+- Super Admin Laravel: fundação implementada e testada;
 - Pacientes: primeira onda de domínio já migrada;
-- Atendimentos: pausado até a limpeza/finalização desta fundação;
-- conexão de leitura do Supabase para migração/concordância: próxima etapa;
-- Super Admin Laravel: próxima etapa desta fundação.
+- Atendimentos: pausado até a validação final desta fundação;
+- limpeza de scaffold/infraestrutura sem consumidor: concluída no código e protegida por guards; sujeita aos gates do CI antes da integração em `main`.
 
 ## Desenvolvimento
 
-Pré-requisitos: PHP 8.4, Composer, Node/Bun compatível com o lock do projeto e PostgreSQL 17.
+Pré-requisitos: PHP 8.4, Composer e PostgreSQL 17.
 
 ```bash
 composer install
@@ -50,7 +51,7 @@ Health check:
 GET /api/health
 ```
 
-A raiz `/` redireciona para `/admin`, onde ficará o painel Super Admin Laravel.
+A raiz `/` redireciona para `/admin`, painel Super Admin Laravel.
 
 ## Qualidade obrigatória
 
@@ -69,8 +70,10 @@ O CI também valida:
 - contrato Supabase ↔ Laravel;
 - fronteira Platform ↔ Domain;
 - contrato PostgreSQL-only;
+- bootstrap PostgreSQL do `docker-compose.yml`;
 - tamanho máximo de arquivos;
 - ausência de `.env` versionado;
+- ausência de infraestrutura, scaffold e pipeline frontend sem consumidor;
 - escopo arquitetural do backend.
 
 ## Estrutura
