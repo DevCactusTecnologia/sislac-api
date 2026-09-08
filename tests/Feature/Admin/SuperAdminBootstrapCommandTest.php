@@ -37,11 +37,21 @@ it('promove usuário existente sem alterar sua senha', function () {
         ->and(Hash::check('senha-original', $user->password))->toBeTrue();
 });
 
+it('não cria Super Admin com senha menor que 12 caracteres', function () {
+    $this->artisan('admin:super-user', ['email' => 'weak@example.com'])
+        ->expectsQuestion('Nome', 'Administrador SISLAC')
+        ->expectsQuestion('Senha', 'curta123')
+        ->expectsQuestion('Confirme a senha', 'curta123')
+        ->assertFailed();
+
+    expect(User::query()->where('email', 'weak@example.com')->exists())->toBeFalse();
+});
+
 it('não cria Super Admin quando a confirmação da senha diverge', function () {
     $this->artisan('admin:super-user', ['email' => 'invalid@example.com'])
         ->expectsQuestion('Nome', 'Administrador SISLAC')
-        ->expectsQuestion('Senha', 'senha-um')
-        ->expectsQuestion('Confirme a senha', 'senha-dois')
+        ->expectsQuestion('Senha', 'senha-segura-um')
+        ->expectsQuestion('Confirme a senha', 'senha-segura-dois')
         ->assertFailed();
 
     expect(User::query()->where('email', 'invalid@example.com')->exists())->toBeFalse();
