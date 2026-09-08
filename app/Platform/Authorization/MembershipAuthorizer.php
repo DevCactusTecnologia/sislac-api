@@ -43,6 +43,7 @@ final class MembershipAuthorizer
                 TenantPermission::CreatePatient,
                 TenantPermission::EditPatient,
                 TenantPermission::ViewAppointments,
+                TenantPermission::CreateAppointment,
             ], true),
             'analista', 'financeiro' => in_array($permission, [
                 TenantPermission::ViewPatients,
