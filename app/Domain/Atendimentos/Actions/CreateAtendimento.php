@@ -93,7 +93,7 @@ final class CreateAtendimento
      */
     private function parentAttributes(array $payload): array
     {
-        return $this->only($payload, [
+        $attributes = $this->only($payload, [
             'data',
             'paciente_id',
             'paciente_nome',
@@ -112,6 +112,12 @@ final class CreateAtendimento
             'prioridade_clinica',
             'idempotency_key',
         ]);
+
+        if (($attributes['paciente_cpf'] ?? null) === null) {
+            $attributes['paciente_cpf'] = '';
+        }
+
+        return $attributes;
     }
 
     /**
@@ -145,6 +151,7 @@ final class CreateAtendimento
                 'amostra_id',
                 'material_id',
                 'mnemonico_exame',
+                'solicitante',
                 'lab_apoio_id',
                 'cobranca_destino',
                 'convenio_cobranca_id',
