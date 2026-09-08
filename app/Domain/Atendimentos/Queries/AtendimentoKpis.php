@@ -6,12 +6,17 @@ use App\Domain\Atendimentos\Models\Atendimento;
 use App\Domain\Atendimentos\Models\AtendimentoExame;
 use Illuminate\Database\Eloquent\Builder;
 
-final readonly class AtendimentoKpis
+final class AtendimentoKpis
 {
-    public function __construct(private ListAtendimentos $listAtendimentos) {}
+    private readonly ListAtendimentos $listAtendimentos;
+
+    public function __construct(ListAtendimentos $listAtendimentos)
+    {
+        $this->listAtendimentos = $listAtendimentos;
+    }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array{total:int,aguardando_coleta:int,em_analise:int,pendentes:int,finalizados:int,receita_total:string}
      */
     public function handle(array $filters): array
@@ -46,9 +51,10 @@ final readonly class AtendimentoKpis
 
         $receita = AtendimentoExame::query()
             ->where('status', '<>', 'cancelado')
-            ->whereHas('atendimento', function (Builder $query) use ($filters): void {
-                $this->listAtendimentos->applyFilters($query, $filters);
-            })
+            ->whereHas(
+                'atendimento',
+                fn (Builder $query) => $this->listAtendimentos->applyFilters($query, $filters),
+            )
             ->sum('valor');
 
         return [
