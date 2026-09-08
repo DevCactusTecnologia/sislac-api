@@ -25,12 +25,26 @@ Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - fundação Laravel/PostgreSQL: concluída;
 - banco central e database-per-lab: concluídos;
 - Sanctum e autorização central: concluídos;
-- provisionamento idempotente de novo laboratório: concluído e testado;
+- provisionamento idempotente de novo laboratório: concluído e testado, incluindo schema/invariantes de Atendimentos em banco recém-criado;
 - conexão `supabase_source` de leitura/concordância: implementada e protegida contra escrita acidental;
 - Super Admin Laravel: fundação implementada e testada;
-- Pacientes: primeira onda de domínio já migrada;
-- Atendimentos: pausado até a validação final desta fundação;
+- Pacientes: backend Laravel migrado;
+- Atendimentos: backend Laravel implementado com leitura, KPIs, criação idempotente, edição transacional, preservação clínica, pagamentos simples, cancelamento e auditoria;
+- **cutover de Atendimentos permanece bloqueado**: o frontend React/Vite não deve ser migrado para essas rotas até Rotina e Financeiro/Convênios/Caixa cobrirem as invariantes dependentes e a concordância final for aprovada;
 - limpeza de scaffold/infraestrutura sem consumidor: concluída no código e protegida por guards; sujeita aos gates do CI antes da integração em `main`.
+
+### API de Atendimentos
+
+```text
+GET   /api/atendimentos
+GET   /api/atendimentos/kpis
+GET   /api/atendimentos/{id}
+GET   /api/atendimentos/protocolo/{protocolo}
+POST  /api/atendimentos
+PATCH /api/atendimentos/{id}
+```
+
+Permissões server-side: `visualizar_atendimentos`, `criar_atendimento`, `editar_atendimento`, `cancelar_atendimento` e `registrar_pagamento`. O PATCH exige as permissões correspondentes à intenção real do payload. Não existe `DELETE /api/atendimentos`; cancelamento preserva e audita o atendimento.
 
 ## Desenvolvimento
 
