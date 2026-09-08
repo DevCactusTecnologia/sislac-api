@@ -99,6 +99,7 @@ it('não mantém pipeline frontend sem consumidor no Super Admin Blade', functio
         ->and($composer)->not->toContain('npm install')
         ->and($composer)->not->toContain('npm run build')
         ->and(file_exists(base_path('package.json')))->toBeFalse()
+        ->and(file_exists(base_path('.npmrc')))->toBeFalse()
         ->and(file_exists(base_path('vite.config.js')))->toBeFalse()
         ->and(file_exists(resource_path('css/app.css')))->toBeFalse();
 });
