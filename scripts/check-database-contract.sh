@@ -26,6 +26,11 @@ if rg -n --type php \
     violations=$((violations + 1))
 fi
 
+if rg -n 'database/database\.sqlite|touch\(.?database/database\.sqlite' composer.json; then
+    echo "::error::Composer contém scaffold que cria SQLite fora do fluxo de testes."
+    violations=$((violations + 1))
+fi
+
 if [ "$violations" -gt 0 ]; then
     exit 1
 fi
