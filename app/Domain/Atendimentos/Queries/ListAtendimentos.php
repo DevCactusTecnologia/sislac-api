@@ -124,8 +124,19 @@ final class ListAtendimentos
             $query->where('data', '<', CarbonImmutable::parse($dataFim, $timezone)->addDay()->startOfDay());
         }
 
-        $search = trim((string) ($filters['q'] ?? ''));
+        $this->applySearch($query, trim((string) ($filters['q'] ?? '')));
+    }
+
+    /** @param Builder<Atendimento> $query */
+    private function applySearch(Builder $query, string $search): void
+    {
         if ($search === '') {
+            return;
+        }
+
+        if (preg_match('/^\d{7}$/', $search) === 1) {
+            $query->where('protocolo', $search);
+
             return;
         }
 
@@ -133,7 +144,6 @@ final class ListAtendimentos
         $query->where(function (Builder $searchQuery) use ($like): void {
             $searchQuery->whereRaw('LOWER(paciente_nome) LIKE LOWER(?)', [$like])
                 ->orWhere('paciente_cpf', 'like', $like)
-                ->orWhere('protocolo', 'like', $like)
                 ->orWhereRaw('LOWER(solicitante) LIKE LOWER(?)', [$like])
                 ->orWhereRaw('LOWER(convenio_nome) LIKE LOWER(?)', [$like]);
         });
