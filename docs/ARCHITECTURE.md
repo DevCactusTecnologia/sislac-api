@@ -77,7 +77,9 @@ O **Super Admin é totalmente Laravel e server-rendered**. Ele usa somente o pla
 - acompanhar falhas/sucessos de provisionamento;
 - administrar operações globais que realmente pertencem à plataforma.
 
-Não criar outro SPA para o Super Admin e não adicionar Filament, Livewire ou pacote de RBAC por antecipação. O painel deve usar a solução mais curta do Laravel enquanto os requisitos permanecerem simples.
+A fundação atual inclui autenticação/autorização, dashboard, listagem/criação de laboratórios e comando seguro para criar ou promover o primeiro Super Admin. Não criar outro SPA e não adicionar Filament, Livewire ou pacote de RBAC por antecipação.
+
+O layout atual é Blade/HTML puro e não consome `@vite`. Por isso o backend Laravel não mantém `package.json`, `.npmrc`, Vite, Tailwind ou stylesheet compilado próprio nesta fundação. Essa decisão não altera o frontend React/Vite externo já existente. Um pipeline de assets só deve voltar quando houver consumidor Laravel real e teste que justifique a dependência.
 
 ## Supabase durante a transição
 
@@ -87,6 +89,8 @@ O Supabase atual não é recriado dentro do banco central. Ele é uma fonte de r
 - testes diferenciais/concordância;
 - migração de dados por módulo;
 - validação antes do corte de cada onda.
+
+A conexão `supabase_source` está implementada como conexão PostgreSQL separada, somente de transição/leitura, nunca default, e os testes exercitam a proteção contra escrita acidental.
 
 Para um servidor Laravel persistente, a conexão PostgreSQL deve seguir as opções suportadas oficialmente pelo Supabase: conexão direta quando a rede permitir ou Supavisor em Session Mode para ambientes IPv4-only. A conexão deve exigir SSL e nunca ser a conexão default.
 
@@ -130,6 +134,8 @@ PostgreSQL é obrigatório. Outras infraestruturas só existem com consumidor re
 
 Redis, Horizon, Reverb, cache distribuído, workers ou WebSockets não fazem parte da fundação atual se nenhum fluxo executável os utilizar. Configuração, container, variável de ambiente ou dependência futura sem consumidor é resíduo e deve ser removida, podendo voltar na onda que efetivamente a exigir.
 
+O `docker-compose.yml` atual é validado por smoke test real no CI: o bootstrap cria `sislac_central`, permite autenticação TCP de `sislac_app` com a senha configurada e confirma que esse papel não recebe privilégios administrativos (`CREATEDB`, `CREATEROLE`, `SUPERUSER`).
+
 ## Estratégia por ondas
 
 1. fixar contrato executável do módulo no frontend/Supabase;
@@ -153,15 +159,16 @@ Toda mudança deve passar no mesmo SHA:
 - contrato Supabase ↔ Laravel;
 - guards de fronteira, banco, arquivos, `.env` e escopo arquitetural;
 - migrations centrais e tenant reproduzíveis;
-- provisionamento/smoke test quando a mudança tocar tenancy.
+- provisionamento/smoke test quando a mudança tocar tenancy;
+- bootstrap real do PostgreSQL via `docker-compose.yml`.
 
 ## Estado atual
 
-- fundação Laravel/PostgreSQL: concluída;
+- fundação Laravel/PostgreSQL: concluída no código;
 - banco central: concluído;
 - database-per-lab/provisionamento: concluído e testado;
 - Pacientes: migrado;
-- limpeza de scaffold/infraestrutura: em execução;
-- conexão `supabase_source`: próxima etapa;
-- Super Admin Laravel: próxima etapa;
-- Atendimentos: pausado até a fundação limpa passar todos os gates.
+- conexão `supabase_source`: implementada e testada em modo de leitura;
+- Super Admin Laravel: fundação implementada e testada;
+- limpeza de scaffold/infraestrutura/pipeline frontend sem consumidor: concluída no código e protegida por guards;
+- Atendimentos: pausado até esta fundação passar todos os gates no mesmo SHA e ser integrada em `main`.
