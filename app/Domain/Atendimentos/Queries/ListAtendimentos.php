@@ -13,7 +13,7 @@ final class ListAtendimentos
     private const DEFAULT_PAGE_SIZE = 50;
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array{data:Collection<int, Atendimento>,next_cursor:?string}
      */
     public function handle(array $filters): array
@@ -86,8 +86,8 @@ final class ListAtendimentos
     }
 
     /**
-     * @param Builder<Atendimento> $query
-     * @param array<string, mixed> $filters
+     * @param  Builder<Atendimento>  $query
+     * @param  array<string, mixed>  $filters
      */
     public function applyFilters(Builder $query, array $filters): void
     {
