@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`
 
+**Nota de execução:** a auditoria final comprovou que o Super Admin Blade não consome `@vite` nem assets compilados. Portanto, a toolchain Vite/Tailwind/NPM do scaffold foi classificada como órfã e removida do backend. Se um consumidor real de assets surgir futuramente, essa toolchain deve ser reintroduzida de forma deliberada, com teste e necessidade concreta.
+
 ## Global Constraints
 
 - Documentação oficial Laravel 13, Supabase, PostgreSQL e stancl/tenancy é normativa.
@@ -34,7 +36,7 @@
 - Modify: `docs/ARCHITECTURE.md`
 - Create: `scripts/check-backend-scope.sh`
 - Modify: `.github/workflows/ci.yml`
-- Test: `tests/Architecture/BackendScopeTest.php`
+- Test: `tests/Feature/Architecture/BackendScopeTest.php`
 
 **Interfaces:**
 - Produces: gate `scripts/check-backend-scope.sh` executado pelo CI.
@@ -45,7 +47,7 @@ O teste deve provar que:
 - `stancl/tenancy` permanece presente;
 - conexão `central` e `tenant_template` permanecem presentes;
 - `config/tenancy.php` usa somente `DatabaseTenancyBootstrapper`;
-- não existe segundo frontend em `resources/js` além do necessário ao Super Admin;
+- não existe segundo frontend em `resources/js`;
 - não existem specs ativas afirmando que Laravel é apenas proxy do Supabase;
 - as PRs superseded de Atendimentos não são tratadas como baseline normativa.
 
@@ -67,7 +69,7 @@ README/AGENTS/ARCHITECTURE devem declarar explicitamente:
 
 ```bash
 bash scripts/check-backend-scope.sh
-vendor/bin/pest tests/Architecture/BackendScopeTest.php
+vendor/bin/pest tests/Feature/Architecture/BackendScopeTest.php
 ```
 
 Expected: PASS.
@@ -79,13 +81,13 @@ Expected: PASS.
 **Files:**
 - Delete: `resources/views/welcome.blade.php`
 - Delete: `resources/js/app.js`
+- Delete if no consumer: `package.json`, `.npmrc`, `vite.config.js`, `resources/css/app.css`
 - Modify: `routes/web.php`
-- Modify: `vite.config.js`
 - Review/remove if unused: Redis service/env/CI configuration
-- Review/remove if unused: Composer/NPM dev dependencies
+- Review/remove if unused: Composer dev dependencies
 
 **Interfaces:**
-- Produces: raiz web mínima e assets preparados somente para o futuro Super Admin.
+- Produces: raiz web mínima e Super Admin Blade sem pipeline frontend próprio enquanto não existir consumidor real.
 
 - [ ] **Step 1: testar que `/` não depende de welcome**
 
@@ -95,9 +97,9 @@ Adicionar feature test esperando redirect explícito da raiz para `/admin` quand
 
 Remover somente depois de confirmar ausência de consumidores.
 
-- [ ] **Step 3: simplificar Vite**
+- [ ] **Step 3: auditar pipeline frontend do backend**
 
-Manter `resources/css/app.css` e Tailwind porque o Super Admin será Laravel. Remover apenas entrada JS vazia.
+Verificar se o layout do Super Admin consome `@vite` ou assets compilados. Se não houver consumidor, remover `package.json`, `.npmrc`, `vite.config.js`, `resources/css/app.css` e comandos NPM de `composer setup`. Não manter Vite/Tailwind preventivamente.
 
 - [ ] **Step 4: auditar Redis**
 
@@ -105,7 +107,7 @@ Buscar consumidores reais de cache, queue e Redis. Se não houver consumidor, re
 
 - [ ] **Step 5: auditar dependências**
 
-Para cada dependência Composer/NPM sem chamada, script ou comando usado no projeto, remover com atualização determinística dos lockfiles e repetir Composer Audit.
+Para cada dependência Composer sem chamada, script ou comando usado no projeto, remover somente com evidência de ausência de consumidor e repetir Composer Audit. Ferramentas reais de desenvolvimento/teste permanecem.
 
 ---
 
@@ -236,7 +238,8 @@ Buscar referências a arquivos removidos, imports quebrados, `TODO`, `FIXME`, `l
 - [ ] migrations central fresh em PostgreSQL 17
 - [ ] provisionamento de tenant em PostgreSQL 17
 - [ ] smoke test de conexão `supabase_source` sem escrita
-- [ ] build Vite do Super Admin
+- [ ] bootstrap real do `docker-compose.yml` com autenticação de `sislac_app`
+- [ ] ausência de pipeline frontend sem consumidor no backend
 - [ ] diff final sem arquivos órfãos conhecidos
 
 Somente depois destes gates a próxima onda de domínio (Atendimentos) pode ser reaberta a partir da `main` limpa.
