@@ -61,7 +61,7 @@ function atendimentoInvariantControlConnection(?string $database = null): PDO
 function createInvariantAtendimento(array $overrides = []): int
 {
     return (int) DB::table('atendimentos')->insertGetId(array_merge([
-        'protocolo' => 'CLIENTE-NAO-CONFIAVEL',
+        'protocolo' => 'CLIENT-'.Str::upper(Str::random(8)),
         'paciente_nome' => 'Paciente Invariantes',
         'paciente_cpf' => '12345678901',
     ], $overrides));
