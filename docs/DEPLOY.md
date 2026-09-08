@@ -70,7 +70,7 @@ APP_ENV=production
 APP_DEBUG=false
 APP_URL=https://api.sislac.com.br
 FRONTEND_URL=https://sislac.com.br
-CORS_ALLOWED_ORIGINS=https://sislac.com.br
+CORS_ALLOWED_ORIGINS=https://sislac.com.br,https://www.sislac.com.br
 
 DB_CONNECTION=central
 DB_HOST=127.0.0.1
@@ -89,7 +89,11 @@ TENANT_DB_PASSWORD=<mesma-senha-de-DB_PASSWORD>
 CACHE_STORE=database
 SESSION_DRIVER=database
 SESSION_ENCRYPT=true
+SESSION_DOMAIN=.sislac.com.br
 SESSION_SECURE_COOKIE=true
+SESSION_HTTP_ONLY=true
+SESSION_SAME_SITE=lax
+SANCTUM_STATEFUL_DOMAINS=sislac.com.br,www.sislac.com.br
 QUEUE_CONNECTION=database
 ```
 
@@ -101,7 +105,10 @@ openssl rand -base64 32
 
 As variáveis `SUPABASE_DB_*` são necessárias somente enquanto operações de
 transição precisarem consultar a origem Supabase em modo somente leitura. Não
-use credencial com permissão de escrita para essa conexão.
+use credencial com permissão de escrita para essa conexão. Em backend persistente,
+use a conexão direta PostgreSQL em `5432` quando a VPS tiver conectividade IPv6
+com o host direto do Supabase; se a VPS for IPv4-only, use Supavisor Session Mode
+também em `5432`. Mantenha `SUPABASE_DB_SSLMODE=require`.
 
 ## 3. Primeira subida
 
@@ -132,12 +139,10 @@ O comando solicita `Nome`, `Senha` e `Confirme a senha`. Para promover um
 usuário central já existente, execute o mesmo comando com o e-mail dele; a senha
 atual é preservada.
 
-Finalize os caches e suba a aplicação:
+Otimize a aplicação com o comando oficial do Laravel e suba os serviços web:
 
 ```bash
-docker compose run --rm app php artisan config:cache
-docker compose run --rm app php artisan route:cache
-docker compose run --rm app php artisan event:cache
+docker compose run --rm app php artisan optimize
 docker compose up -d app nginx
 ```
 
@@ -150,6 +155,10 @@ docker compose --profile tools up -d pgadmin
 A porta `5050` não deve ser publicada para a internet; acesse-a por túnel SSH.
 
 ## 4. Nginx público e TLS
+
+O Nginx público é a borda confiável. Ele deve sobrescrever os headers de proxy
+recebidos do cliente; não preserve uma cadeia `X-Forwarded-For` fornecida pela
+internet.
 
 Crie `/etc/nginx/sites-available/api.sislac.com.br`:
 
@@ -180,9 +189,10 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port 443;
     }
 }
 ```
@@ -206,9 +216,7 @@ git pull --ff-only
 docker compose build app
 docker compose run --rm app composer install --no-dev --optimize-autoloader
 docker compose run --rm app php artisan migrate --database=central --force
-docker compose run --rm app php artisan config:cache
-docker compose run --rm app php artisan route:cache
-docker compose run --rm app php artisan event:cache
+docker compose run --rm app php artisan optimize
 docker compose up -d app nginx
 ```
 
