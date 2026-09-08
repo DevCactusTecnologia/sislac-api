@@ -1,0 +1,76 @@
+{
+  "baseline": {
+    "frontend_repository": "DevCactusTecnologia/sislacprivado",
+    "frontend_sha": "57cc9be96703a41b207d530088369da1cc23cd94",
+    "supabase_project_ref": "eramenhnqcbyctyiqwlm",
+    "captured_at": "2026-09-08"
+  },
+  "aggregate": {
+    "tables": [
+      "atendimentos",
+      "atendimento_exames",
+      "atendimento_pagamentos",
+      "atendimento_audit"
+    ],
+    "tenant_scoped_by_database": true,
+    "tenant_id_column": false
+  },
+  "protocol": {
+    "server_generated": true,
+    "immutable": true,
+    "digits": 7,
+    "sequence_table": "protocolo_sequence"
+  },
+  "idempotency": {
+    "column": "idempotency_key",
+    "type": "uuid",
+    "unique_when_present": true
+  },
+  "pagination": {
+    "cursor": ["data", "id"],
+    "ordering": ["data desc", "id desc"],
+    "default_page_size": 50,
+    "min_page_size": 10,
+    "max_page_size": 200,
+    "offset": false
+  },
+  "filters": [
+    "status",
+    "pagamento",
+    "unidade_id",
+    "data_inicio",
+    "data_fim",
+    "q"
+  ],
+  "kpis": [
+    "total",
+    "aguardando_coleta",
+    "em_analise",
+    "pendentes",
+    "finalizados",
+    "receita_total"
+  ],
+  "permissions": {
+    "index": "visualizar_atendimentos",
+    "show": "visualizar_atendimentos",
+    "store": "criar_atendimento",
+    "update": "editar_atendimento",
+    "cancel": "cancelar_atendimento",
+    "payment_only": "registrar_pagamento"
+  },
+  "derived_fields": [
+    "status_atendimento",
+    "status_pagamento",
+    "subtotal",
+    "desconto_total",
+    "acrescimo_total",
+    "total"
+  ],
+  "cutover": {
+    "frontend_blocked": true,
+    "blocked_until": [
+      "rotina",
+      "financeiro_convenios_caixa"
+    ]
+  }
+}
