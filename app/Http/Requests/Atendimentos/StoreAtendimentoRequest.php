@@ -45,6 +45,7 @@ final class StoreAtendimentoRequest extends FormRequest
             'exames.*.amostra_id' => ['sometimes', 'nullable', 'uuid'],
             'exames.*.material_id' => ['sometimes', 'nullable', 'uuid'],
             'exames.*.mnemonico_exame' => ['sometimes', 'nullable', 'string'],
+            'exames.*.solicitante' => ['sometimes', 'string'],
             'exames.*.lab_apoio_id' => ['sometimes', 'nullable', 'uuid'],
             'exames.*.cobranca_destino' => ['sometimes', 'string', Rule::in(['paciente', 'convenio'])],
             'exames.*.convenio_cobranca_id' => ['sometimes', 'nullable', 'integer', 'min:0'],
