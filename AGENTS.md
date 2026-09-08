@@ -12,6 +12,7 @@ O `sislac-api` é o backend Laravel definitivo do SISLAC.
 - Cada laboratório possui seu próprio banco PostgreSQL físico.
 - Cada novo laboratório é provisionado pelo Laravel: registro central → criação do banco → migrations tenant → smoke check → ativação.
 - O Super Admin é totalmente Laravel e server-rendered; não criar outro SPA.
+- O backend Laravel não mantém pipeline Vite/Tailwind/NPM enquanto o Super Admin Blade não tiver consumidor real de assets compilados. Isso não altera o frontend React/Vite externo existente.
 
 ## Regras que não se negociam
 
@@ -27,13 +28,14 @@ O `sislac-api` é o backend Laravel definitivo do SISLAC.
 10. **Backend enxuto.** Não criar Repository, DTO, Manager, Adapter, CQRS, event bus, cache, fila, Redis, WebSocket ou pacote “para o futuro” sem consumidor real e necessidade demonstrada.
 11. **Sem infraestrutura futura no `.env`, Docker ou CI.** Configuração sem código consumidor é resíduo e deve ser removida; volta somente na onda que a usar.
 12. **Super Admin simples.** Usar recursos nativos do Laravel e o banco central. Não adicionar Filament/Livewire/pacote de RBAC sem necessidade comprovada.
+13. **Sem pipeline frontend preventivo no backend.** Vite, Tailwind, NPM ou equivalente só entram quando uma view Laravel realmente consumir os assets compilados e a necessidade estiver coberta por teste/guard.
 
 ## Fronteiras
 
 - `app/Platform` conhece banco central, Super Admin, tenancy e provisionamento; não importa regras de `App\Domain`.
 - `app/Domain` contém regras do laboratório e opera no contexto tenant; não acessa explicitamente o banco central.
 - A camada HTTP pode coordenar identidade/seleção de tenant, mas não deve misturar dados centrais e clínicos na mesma persistência.
-- A futura conexão `supabase_source` é somente baseline/transição e nunca será a conexão default da aplicação.
+- A conexão `supabase_source` é somente baseline/transição, usa PostgreSQL em modo de leitura e nunca é a conexão default da aplicação.
 
 ## Como trabalhar
 
@@ -72,4 +74,4 @@ Também executar todos os `scripts/check-*.sh` aplicáveis.
 
 ## Fase atual
 
-A fundação multi-database e Pacientes estão implementados. Atendimentos permanece pausado. A fase atual é exclusivamente: limpar resíduos, conectar leitura do Supabase, concluir o Super Admin Laravel e provar novamente provisionamento/qualidade antes da próxima onda de domínio.
+A fundação multi-database, Pacientes, `supabase_source` read-only e a fundação do Super Admin Laravel estão implementados. Atendimentos permanece pausado. A fase atual é exclusivamente validar a limpeza final, o bootstrap PostgreSQL real e todos os gates no mesmo SHA antes de integrar esta fundação em `main` e abrir a próxima onda de domínio.
