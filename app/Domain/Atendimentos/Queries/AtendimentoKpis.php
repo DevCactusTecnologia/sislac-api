@@ -49,12 +49,12 @@ final class AtendimentoKpis
             ->whereDoesntHave('exames', fn (Builder $query): Builder => $query->whereNotIn('status', ['finalizado', 'cancelado']))
             ->count();
 
+        $receitaParents = Atendimento::query()->select('id');
+        $this->listAtendimentos->applyFilters($receitaParents, $filters);
+
         $receita = AtendimentoExame::query()
             ->where('status', '<>', 'cancelado')
-            ->whereHas(
-                'atendimento',
-                fn (Builder $query) => $this->listAtendimentos->applyFilters($query, $filters),
-            )
+            ->whereIn('atendimento_id', $receitaParents)
             ->sum('valor');
 
         return [
