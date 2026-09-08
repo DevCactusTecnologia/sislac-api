@@ -66,6 +66,8 @@ registro central com status provisioning
 
 Falha não ativa laboratório parcial. A execução registra estado/auditoria e pode ser repetida de forma idempotente.
 
+As migrations tenant são a única fonte de schema do laboratório. O teste de provisionamento valida em PostgreSQL real que um banco recém-criado recebe Pacientes e o agregado completo de Atendimentos, inclusive as invariantes de protocolo. Não existe código especial de provisionamento por módulo.
+
 `PostgresDatabaseAdmin` valida o nome físico e o usuário HTTP normal não recebe privilégios desnecessários como `SUPERUSER`.
 
 ## Super Admin
@@ -113,9 +115,30 @@ Dados clínicos permanecem nos bancos tenant, nunca duplicados no central.
 
 ## Domínio do laboratório
 
-`app/Domain` contém as regras que operam no banco dedicado do laboratório. A primeira onda concluída é Pacientes, com schema tenant e contrato de concordância com o Supabase.
+`app/Domain` contém as regras que operam no banco dedicado do laboratório. Pacientes e Atendimentos possuem implementação Laravel no banco tenant; módulos seguintes continuam entrando por ondas próprias.
 
-Atendimentos, Coleta, Análise, Resultados, Financeiro e demais módulos entram somente em suas próprias ondas. As PRs anteriores de Atendimentos foram superseded enquanto esta fundação é limpa e consolidada.
+### Atendimentos
+
+Atendimentos é um agregado transacional formado por `atendimentos`, `atendimento_exames`, `atendimento_pagamentos` e `atendimento_audit`, além de `protocolo_sequence`. Protocolo, status e totais derivados são invariantes server-side/PostgreSQL; criação e edição de pai/filhos são atômicas.
+
+Rotas implementadas:
+
+| Método | Rota | Regra de autorização |
+|---|---|---|
+| GET | `/api/atendimentos` | `visualizar_atendimentos` |
+| GET | `/api/atendimentos/kpis` | `visualizar_atendimentos` |
+| GET | `/api/atendimentos/{id}` | `visualizar_atendimentos` |
+| GET | `/api/atendimentos/protocolo/{protocolo}` | `visualizar_atendimentos` |
+| POST | `/api/atendimentos` | `criar_atendimento` |
+| PATCH | `/api/atendimentos/{id}` | autorização contextual: `editar_atendimento`, `cancelar_atendimento` e/ou `registrar_pagamento` conforme o payload |
+
+Não existe `DELETE /api/atendimentos`; cancelamento é operação de negócio, preserva o registro e é auditado no banco do laboratório.
+
+A edição preserva o estado clínico da mesma ocorrência de exame identificada por `(exame_id ou nome normalizado) + amostra_seq`; nova amostra não herda estado anterior. Operações que exigiriam Caixa/estorno/financeiro ainda não migrado são bloqueadas explicitamente em vez de produzir equivalência parcial.
+
+**Implementação backend não significa cutover do frontend.** O React/Vite atual continua usando o fluxo vigente até que Rotina e Financeiro/Convênios/Caixa cubram as invariantes dependentes e a concordância/cutover seja aprovada. Nenhum objeto Supabase é removido nesta onda.
+
+Coleta, Análise, Resultados, Financeiro e demais módulos entram somente em suas próprias ondas.
 
 ## Fronteira Platform ↔ Domain
 
@@ -167,8 +190,8 @@ Toda mudança deve passar no mesmo SHA:
 - fundação Laravel/PostgreSQL: concluída no código;
 - banco central: concluído;
 - database-per-lab/provisionamento: concluído e testado;
-- Pacientes: migrado;
+- Pacientes: migrado no backend Laravel;
+- Atendimentos: backend Laravel implementado e testado; **cutover do frontend bloqueado** até Rotina e Financeiro/Convênios/Caixa cobrirem as dependências;
 - conexão `supabase_source`: implementada e testada em modo de leitura;
 - Super Admin Laravel: fundação implementada e testada;
-- limpeza de scaffold/infraestrutura/pipeline frontend sem consumidor: concluída no código e protegida por guards;
-- Atendimentos: pausado até esta fundação passar todos os gates no mesmo SHA e ser integrada em `main`.
+- limpeza de scaffold/infraestrutura/pipeline frontend sem consumidor: concluída no código e protegida por guards.
