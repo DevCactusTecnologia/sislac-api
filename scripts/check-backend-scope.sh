@@ -67,7 +67,7 @@ for scaffold in tests/Unit/ExampleTest.php database/migrations/tenant/.gitkeep p
   [ ! -e "$scaffold" ] || fail "Arquivo de scaffold sem função reapareceu: $scaffold"
 done
 
-for frontend_orphan in package.json .npmrc vite.config.js resources/css/app.css; do
+for frontend_orphan in package.json .npmrc vite.config.js resources/css/app.css .claude/skills/tailwindcss-development; do
   [ ! -e "$frontend_orphan" ] || fail "Pipeline frontend sem consumidor reapareceu: $frontend_orphan"
 done
 
