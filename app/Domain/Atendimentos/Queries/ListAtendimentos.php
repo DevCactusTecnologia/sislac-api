@@ -81,7 +81,7 @@ final class ListAtendimentos
             }
 
             $nextCursor = AtendimentoCursor::encode(
-                $cursorData->toISOString(),
+                $cursorData->format('Y-m-d\TH:i:s.uP'),
                 (int) $last->getKey(),
             );
         }
