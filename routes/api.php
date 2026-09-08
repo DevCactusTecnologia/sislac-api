@@ -1,5 +1,9 @@
 <?php
 
+use App\Http\Controllers\Atendimentos\AtendimentoKpisController;
+use App\Http\Controllers\Atendimentos\ListAtendimentosController;
+use App\Http\Controllers\Atendimentos\ShowAtendimentoByProtocoloController;
+use App\Http\Controllers\Atendimentos\ShowAtendimentoController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\SessionController;
@@ -36,3 +40,16 @@ Route::middleware(['auth:sanctum', 'tenant', 'tenant.permission:editar_paciente'
     ->patch('/pacientes/{id}', UpdatePacienteController::class)
     ->whereNumber('id')
     ->name('pacientes.update');
+
+Route::middleware(['auth:sanctum', 'tenant', 'tenant.permission:visualizar_atendimentos'])
+    ->prefix('atendimentos')
+    ->group(function () {
+        Route::get('/', ListAtendimentosController::class)->name('atendimentos.index');
+        Route::get('/kpis', AtendimentoKpisController::class)->name('atendimentos.kpis');
+        Route::get('/protocolo/{protocolo}', ShowAtendimentoByProtocoloController::class)
+            ->where('protocolo', '[0-9]{7}')
+            ->name('atendimentos.show-protocolo');
+        Route::get('/{id}', ShowAtendimentoController::class)
+            ->whereNumber('id')
+            ->name('atendimentos.show');
+    });
