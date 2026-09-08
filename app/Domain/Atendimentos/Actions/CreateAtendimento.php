@@ -144,7 +144,7 @@ final class CreateAtendimento
                 'grupo_exame_id',
                 'amostra_id',
                 'material_id',
-                'mnemonico',
+                'mnemonico_exame',
                 'lab_apoio_id',
                 'cobranca_destino',
                 'convenio_cobranca_id',
