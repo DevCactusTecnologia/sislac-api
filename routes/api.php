@@ -4,6 +4,7 @@ use App\Http\Controllers\Atendimentos\AtendimentoKpisController;
 use App\Http\Controllers\Atendimentos\ListAtendimentosController;
 use App\Http\Controllers\Atendimentos\ShowAtendimentoByProtocoloController;
 use App\Http\Controllers\Atendimentos\ShowAtendimentoController;
+use App\Http\Controllers\Atendimentos\StoreAtendimentoController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\SessionController;
@@ -53,3 +54,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'tenant.permission:visualizar_atend
             ->whereNumber('id')
             ->name('atendimentos.show');
     });
+
+Route::middleware(['auth:sanctum', 'tenant', 'tenant.permission:criar_atendimento'])
+    ->post('/atendimentos', StoreAtendimentoController::class)
+    ->name('atendimentos.store');
