@@ -29,9 +29,12 @@ it('mantém o contrato de produção para sessão stateful e otimização', func
     $deploy = file_get_contents(base_path('docs/DEPLOY.md'));
 
     expect($bootstrap)->toContain('trustProxies')
+        ->and($bootstrap)->not->toContain("trustProxies(at: '*'")
         ->and($env)->not->toContain('VITE_APP_NAME')
         ->and($deploy)->toContain('SESSION_DOMAIN=.sislac.com.br')
         ->and($deploy)->toContain('SANCTUM_STATEFUL_DOMAINS=sislac.com.br,www.sislac.com.br')
+        ->and($deploy)->toContain('proxy_set_header X-Forwarded-For $remote_addr;')
+        ->and($deploy)->not->toContain('$proxy_add_x_forwarded_for')
         ->and($deploy)->toContain('php artisan optimize')
         ->and($deploy)->not->toContain('php artisan config:cache')
         ->and($deploy)->not->toContain('php artisan route:cache')
