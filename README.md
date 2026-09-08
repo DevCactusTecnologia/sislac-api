@@ -1,110 +1,98 @@
 # SISLAC — API
 
-Backend do SISLAC (sistema de gestão para laboratórios de análises clínicas) em
-**Laravel 13 / PHP 8.4** sobre **PostgreSQL**, com Redis, filas, WebSocket e
-geração de laudos em PDF. Multi-tenant no modelo **um banco por laboratório**,
-todos os clientes no mesmo endereço (`sislac.com.br`), um único deploy — ver
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) e o ADR‑001.
+Backend definitivo do SISLAC em **Laravel 13 / PHP 8.4 / PostgreSQL 17**.
 
-Este repositório é a **Fase 0**: fundação (esqueleto, Docker, CI, docs, health
-check). O código de domínio entra nas fases seguintes.
+O frontend React/Vite existente permanece em uso durante a migração. O Supabase atual continua sendo a baseline de produção e a origem de leitura/concordância enquanto os módulos são migrados por ondas para Laravel.
 
-## Rodar no PC (Windows + Laravel Herd)
+## Arquitetura
 
-Pré-requisitos: [Laravel Herd](https://herd.laravel.com) (PHP 8.4 + Composer) e
-um PostgreSQL 17 local — o mais simples é o do Docker Desktop, via compose:
+- um único deploy Laravel;
+- banco PostgreSQL central para plataforma, identidade, vínculos, Super Admin e provisionamento;
+- **um banco PostgreSQL por laboratório**, isolado fisicamente;
+- `stancl/tenancy` somente para inicializar e encerrar a conexão do laboratório selecionado;
+- migrations centrais em `database/migrations/central`;
+- migrations de laboratório em `database/migrations/tenant`;
+- cada novo laboratório é criado pelo provisionador Laravel, recebe seu banco físico, executa migrations tenant e só fica ativo após smoke check bem-sucedido;
+- o **Super Admin é totalmente Laravel**, server-rendered, sem criar outro SPA;
+- o Supabase não é alterado destrutivamente até a equivalência de cada onda estar comprovada.
 
-```powershell
+Não fazem parte da fundação atual Redis, Horizon, Reverb, CQRS, event bus, repositories genéricos, DTOs preventivos ou pipeline frontend próprio sem consumidor real.
+
+Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Estado atual
+
+- fundação Laravel/PostgreSQL: concluída;
+- banco central e database-per-lab: concluídos;
+- Sanctum e autorização central: concluídos;
+- provisionamento idempotente de novo laboratório: concluído e testado;
+- conexão `supabase_source` de leitura/concordância: implementada e protegida contra escrita acidental;
+- Super Admin Laravel: fundação implementada e testada;
+- Pacientes: primeira onda de domínio já migrada;
+- Atendimentos: pausado até a validação final desta fundação;
+- limpeza de scaffold/infraestrutura sem consumidor: concluída no código e protegida por guards; sujeita aos gates do CI antes da integração em `main`.
+
+## Desenvolvimento
+
+Pré-requisitos: PHP 8.4, Composer e PostgreSQL 17.
+
+```bash
 composer install
-copy .env.example .env
+cp .env.example .env
 php artisan key:generate
-
-# Banco + Redis + pgAdmin locais (Docker Desktop). A senha do papel sislac_app
-# vem de DB_PASSWORD no .env — troque antes de subir pela primeira vez.
-docker compose up -d postgres redis pgadmin
-
-php artisan migrate
+php artisan migrate --path=database/migrations/central
 ```
 
-Sem Docker: instale o PostgreSQL 17 para Windows, crie o papel `sislac_app` e o
-banco `sislac_central` (o SQL está em
-[docker/postgres/init/01-create-central.sql](docker/postgres/init/01-create-central.sql))
-e aponte o `.env` para ele.
+Para desenvolvimento com Docker, suba somente os serviços efetivamente necessários ao fluxo atual. PostgreSQL é obrigatório para os testes de integração; serviços futuros não devem ser provisionados antecipadamente.
 
-> **Volume local antigo:** não aponte PostgreSQL 17 diretamente para um
-> `postgres_data` inicializado pelo PostgreSQL 16. Migre o volume com as
-> ferramentas oficiais do PostgreSQL ou recrie-o somente quando os dados forem
-> comprovadamente descartáveis. Nunca remova um volume sem backup/verificação.
+Health check:
 
-Abra `http://sislac-api.test/api/health` (Herd usa o nome da pasta do projeto)
-ou rode `php artisan serve` e use `http://127.0.0.1:8000/api/health`. Resposta
-esperada:
-
-```json
-{ "app": "SISLAC", "env": "local", "time": "...", "database": { "connection": "central", "status": "ok" } }
+```text
+GET /api/health
 ```
 
-- pgAdmin local: <http://localhost:5050> (`PGADMIN_EMAIL` / `PGADMIN_PASSWORD` do `.env`).
-- DBeaver / TablePlus: [docs/CONECTAR_DBEAVER.md](docs/CONECTAR_DBEAVER.md).
+A raiz `/` redireciona para `/admin`, painel Super Admin Laravel.
 
-## Qualidade
+## Qualidade obrigatória
 
-```powershell
-vendor\bin\pint --test        # formatação (preset laravel)
-vendor\bin\pest               # testes
-vendor\bin\phpstan analyse    # análise estática (depois de instalar o Larastan)
+Nada entra em `main` sem todos os gates disponíveis verdes no mesmo SHA:
+
+```bash
+composer validate --strict
+composer audit --locked --no-interaction
+vendor/bin/pint --test
+vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+vendor/bin/pest --parallel
 ```
 
-O CI (GitHub Actions) roda Pint e Pest contra um PostgreSQL 17 real, além dos
-guards de repositório (`scripts/`): fronteira Platform ↔ Domain, nenhum arquivo
-acima de 500 KiB, nenhum `.env` comitado. A etapa Larastan permanece como aviso
-enquanto a dependência ainda não estiver instalada legitimamente no lockfile.
-Nada entra em `main` sem os gates efetivamente disponíveis verdes.
+O CI também valida:
 
-Para ligar o Larastan (a etapa fica como aviso até então):
-
-```powershell
-composer require --dev larastan/larastan
-```
-
-Recomendado também: [Laravel Boost](https://github.com/laravel/boost), que dá
-ao Claude Code / Cursor acesso à documentação e ao estado real da aplicação:
-
-```powershell
-composer require --dev laravel/boost
-php artisan boost:install
-```
-
-## Produção (VPS Hostinger, Ubuntu 24.04)
-
-Tudo em Docker Compose, portas só em `127.0.0.1`, Nginx público com TLS na
-frente. Passo a passo em [docs/DEPLOY.md](docs/DEPLOY.md); segurança em
-[docs/SEGURANCA.md](docs/SEGURANCA.md); pgAdmin via túnel SSH em
-[docs/PGADMIN.md](docs/PGADMIN.md).
+- contrato Supabase ↔ Laravel;
+- fronteira Platform ↔ Domain;
+- contrato PostgreSQL-only;
+- bootstrap PostgreSQL do `docker-compose.yml`;
+- tamanho máximo de arquivos;
+- ausência de `.env` versionado;
+- ausência de infraestrutura, scaffold e pipeline frontend sem consumidor;
+- escopo arquitetural do backend.
 
 ## Estrutura
 
-```
+```text
 app/
-├─ Platform/        # banco central: tenants, usuários, vínculos, planos (Fase 1)
-├─ Domain/          # regras do laboratório: pacientes, atendimentos, exames (Fase 3)
-└─ Http/Controllers # HealthController hoje; Platform/ e Tenant/ nas próximas fases
-config/database.php # conexões `central` (padrão) e `tenant` (molde, preenchida em runtime)
-docker/             # PHP-FPM 8.4, Nginx, init do Postgres
-docs/               # arquitetura, deploy, segurança, ferramentas de banco
-scripts/            # guards executados no CI
+├─ Platform/        # banco central, Super Admin, tenancy e provisionamento
+├─ Domain/          # domínio executado no banco dedicado do laboratório
+└─ Http/            # controllers, requests, middleware e resources
+
+database/migrations/central/  # schema da plataforma
+database/migrations/tenant/   # schema reproduzível de cada laboratório
+docs/contracts/               # contratos de concordância com o Supabase
+scripts/                       # guards do CI
 ```
 
-## Fases
+## Regra de evolução
 
-| Fase | Escopo | Estado |
-|------|--------|--------|
-| 0 | Laravel + Docker + CI + docs + health check | **concluída** |
-| 1 | Banco central, tenancy multi-database (`stancl/tenancy`), Sanctum, super-admin (Filament), provisionamento | **em implementação** |
-| 2 | PDF (Chromium), WhatsApp Cloud API, integrações de apoio, Horizon/Reverb | pendente |
-| 3 | Endpoints de domínio; front Lovable passa a consumir esta API | pendente |
-| 4 | Migração dos dados do Supabase e corte | pendente |
-| 5 | SaaS comercial (self-service, planos, cobrança) | pendente |
+Cada módulo entra por uma onda pequena e verificável: contrato Supabase → testes → implementação Laravel → concordância → adaptação do consumidor → corte somente após prova de equivalência. Nenhum módulo futuro deve criar abstração ou infraestrutura antes de ter consumidor real.
 
 ## Licença
 

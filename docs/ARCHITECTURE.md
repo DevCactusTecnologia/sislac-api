@@ -1,57 +1,104 @@
 # Arquitetura — SISLAC API
 
-A referência de implementação desta migração é
-`docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`.
-Documentação oficial Laravel 13, PostgreSQL, Supabase e, quando aplicável,
-`stancl/tenancy` prevalece sobre comportamento legado.
+A especificação normativa desta migração é `docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`. Documentação oficial Laravel 13, PostgreSQL, Supabase e `stancl/tenancy` prevalece sobre comportamento legado.
 
-## Em uma frase
+## Objetivo
 
-Um único deploy Laravel atende muitos laboratórios. O plano central mantém
-identidade, vínculos e provisionamento; cada laboratório possui seu próprio
-banco PostgreSQL. Não existe subdomínio por laboratório.
+O Laravel é o backend definitivo do SISLAC. O frontend React/Vite existente permanece durante a migração progressiva. O Supabase atual continua funcionando como baseline de produção e origem de leitura/concordância até que cada onda tenha equivalência comprovada e o consumidor correspondente seja migrado.
 
-## Fluxo de uma requisição autenticada
+A arquitetura de produção é **database-per-lab**:
 
-1. O SPA first-party autentica com Laravel Sanctum em modo stateful, usando
-   sessão/cookie e CSRF.
-2. O usuário autenticado pertence ao banco `central`.
-3. `memberships` determina a lista de laboratórios ativos que o usuário pode
-   acessar.
-4. Com um único vínculo ativo, o laboratório é selecionado automaticamente.
-5. Com vários vínculos ativos, `X-Tenant` seleciona um deles; o cabeçalho nunca
-   autoriza por si só.
-6. Somente após a autorização central o middleware inicializa a conexão do
-   banco daquele laboratório.
-7. O contexto tenant é encerrado deterministicamente ao fim da requisição,
-   inclusive quando uma exceção é lançada.
+```text
+Frontend existente
+        |
+        v
+     Laravel
+        |
+        +--> PostgreSQL central
+        |      plataforma / usuários / memberships
+        |      Super Admin / provisionamento / auditoria
+        |
+        +--> PostgreSQL do laboratório selecionado
+        |      pacientes / atendimentos / exames / domínio
+        |
+        +--> Supabase atual (origem de transição/concordância)
+```
 
-Bearer tokens permanecem disponíveis apenas para integrações, clientes
-externos ou automações que realmente necessitem de API tokens.
-
-## Bancos e conexões
+## Bancos
 
 | Conexão | Finalidade |
 |---|---|
-| `central` | usuários, tenants, memberships, planos, assinaturas e provisionamento |
-| `tenant_template` | configuração-base do PostgreSQL usada pelo `stancl/tenancy` |
-| `tenant` | conexão dinâmica criada e encerrada pelo `stancl/tenancy` em runtime |
-| `sqlite` | somente testes locais rápidos; não faz parte do contrato de produção |
+| `central` | plataforma, identidade, tenants, memberships, planos, assinaturas, provisionamento e auditoria |
+| `tenant_template` | molde PostgreSQL usado pelo `stancl/tenancy` |
+| `tenant` | conexão dinâmica ao banco físico do laboratório durante a requisição |
+| `supabase_source` | leitura/concordância do banco Supabase atual durante a transição; nunca conexão default |
 
-O nome `tenant` é reservado à conexão dinâmica gerenciada pelo tenancy package;
-código de negócio não a cria, não a reconfigura e não seleciona banco por conta
-própria.
+Cada novo laboratório recebe um banco PostgreSQL físico dedicado. O nome do banco é gerado/controlado pelo backend; o navegador não escolhe identificador físico arbitrário.
 
-PostgreSQL é o único banco de produção. MySQL, MariaDB e SQL Server não fazem
-parte do contrato do SISLAC.
+## Tenancy
 
-## Plano central
+`stancl/tenancy` é a implementação adotada e deve permanecer pequena. Somente `DatabaseTenancyBootstrapper` está ativo. Não usar bootstrappers de cache, filesystem ou queue sem consumidor real.
 
-`app/Platform` contém código que só conhece o banco central. A primeira fundação
-usa UUID para `users` e `tenants`, preservando interoperabilidade com as
-identidades atuais do Supabase.
+Fluxo de requisição tenant:
 
-Tabelas centrais:
+1. usuário autentica no Laravel;
+2. memberships ativas determinam os laboratórios permitidos;
+3. um laboratório autorizado é selecionado;
+4. middleware inicializa o contexto tenant;
+5. o domínio opera no banco dedicado;
+6. o contexto tenant é encerrado deterministicamente, inclusive em exceções.
+
+`X-Tenant` nunca concede acesso por si só; quando utilizado, apenas seleciona um vínculo já autorizado.
+
+## Provisionamento de novo laboratório
+
+O provisionamento existente é a única trilha de criação de um novo banco:
+
+```text
+registro central com status provisioning
+  -> advisory lock
+  -> CREATE DATABASE
+  -> inicializar tenancy
+  -> executar database/migrations/tenant
+  -> smoke check do banco correto
+  -> status active
+```
+
+Falha não ativa laboratório parcial. A execução registra estado/auditoria e pode ser repetida de forma idempotente.
+
+`PostgresDatabaseAdmin` valida o nome físico e o usuário HTTP normal não recebe privilégios desnecessários como `SUPERUSER`.
+
+## Super Admin
+
+O **Super Admin é totalmente Laravel e server-rendered**. Ele usa somente o plano central para:
+
+- visualizar laboratórios e status;
+- iniciar provisionamento de novo laboratório;
+- acompanhar falhas/sucessos de provisionamento;
+- administrar operações globais que realmente pertencem à plataforma.
+
+A fundação atual inclui autenticação/autorização, dashboard, listagem/criação de laboratórios e comando seguro para criar ou promover o primeiro Super Admin. Não criar outro SPA e não adicionar Filament, Livewire ou pacote de RBAC por antecipação.
+
+O layout atual é Blade/HTML puro e não consome `@vite`. Por isso o backend Laravel não mantém `package.json`, `.npmrc`, Vite, Tailwind ou stylesheet compilado próprio nesta fundação. Essa decisão não altera o frontend React/Vite externo já existente. Um pipeline de assets só deve voltar quando houver consumidor Laravel real e teste que justifique a dependência.
+
+## Supabase durante a transição
+
+O Supabase atual não é recriado dentro do banco central. Ele é uma fonte de referência temporária para:
+
+- leitura de dados existentes;
+- testes diferenciais/concordância;
+- migração de dados por módulo;
+- validação antes do corte de cada onda.
+
+A conexão `supabase_source` está implementada como conexão PostgreSQL separada, somente de transição/leitura, nunca default, e os testes exercitam a proteção contra escrita acidental.
+
+Para um servidor Laravel persistente, a conexão PostgreSQL deve seguir as opções suportadas oficialmente pelo Supabase: conexão direta quando a rede permitir ou Supavisor em Session Mode para ambientes IPv4-only. A conexão deve exigir SSL e nunca ser a conexão default.
+
+Nenhuma tabela, RPC, Edge Function, policy ou dado do Supabase é removido apenas porque uma implementação Laravel surgiu. O corte acontece somente depois que implementação, dados e consumidores equivalentes forem comprovados.
+
+## Banco central
+
+O banco central contém somente dados de plataforma:
 
 - `users`;
 - `tenants`;
@@ -59,126 +106,69 @@ Tabelas centrais:
 - `plans`;
 - `subscriptions`;
 - `provisioning_runs`;
-- `platform_audit`.
+- `platform_audit`;
+- estado mínimo necessário ao Super Admin.
 
-Invariantes estruturais ficam preferencialmente no PostgreSQL: FKs, uniques e
-índices explícitos. Regras de negócio que não são invariantes estruturais ficam
-em classes pequenas, nomeadas pela intenção.
+Dados clínicos permanecem nos bancos tenant, nunca duplicados no central.
 
 ## Domínio do laboratório
 
-`app/Domain` contém pacientes e receberá, por ondas, atendimentos, exames,
-coleta, análise, resultados, financeiro e demais regras do laboratório. O
-domínio não conhece `App\Platform` e não seleciona banco central.
+`app/Domain` contém as regras que operam no banco dedicado do laboratório. A primeira onda concluída é Pacientes, com schema tenant e contrato de concordância com o Supabase.
 
-A primeira onda migrada é **Pacientes**. O contrato versionado em
-`docs/contracts/pacientes.json` fixa o frontend de referência, schema físico
-observado no Supabase, permissões, serialização, filtros, paginação e
-normalizações. A API Laravel disponibiliza leitura, criação e edição; exclusão
-não integra esta onda porque o frontend fixado não possui consumidor executável
-desse fluxo.
-
-No banco tenant, `pacientes` preserva as invariantes relevantes por constraints
-e índices PostgreSQL. A busca case-insensitive por nome possui suporte GIN com
-`pg_trgm`, enquanto a paginação keyset possui índice composto por
-`(updated_at,id)`. Os dois access paths são verificados separadamente com
-`EXPLAIN (ANALYZE, BUFFERS)`: em uma consulta que combina filtro textual,
-ordenação e `LIMIT`, o planner pode legitimamente preferir o índice de
-paginação para satisfazer a ordenação e aplicar o predicado textual como
-filtro. Os testes, portanto, comprovam a utilizabilidade de cada índice sem
-forçar uma estratégia específica quando ambos competem no mesmo plano, nem
-impõem números de latência artificiais ao runner de CI.
+Atendimentos, Coleta, Análise, Resultados, Financeiro e demais módulos entram somente em suas próprias ondas. As PRs anteriores de Atendimentos foram superseded enquanto esta fundação é limpa e consolidada.
 
 ## Fronteira Platform ↔ Domain
 
-O CI impede:
+O CI deve impedir:
 
-- `app/Domain` e controllers tenant importarem `App\Platform` ou acessarem
-  explicitamente a conexão central;
-- `app/Platform` importar `App\Domain` ou acessar a conexão tenant.
+- `app/Domain` acessar explicitamente o banco central ou importar `App\Platform`;
+- `app/Platform` importar o domínio clínico;
+- uma segunda estratégia de tenancy;
+- infraestrutura futura sem consumidor real.
 
-A camada HTTP de contexto é a única coordenadora entre identidade central e
-inicialização tenant. Essa regra reduz o risco de vazamento entre laboratórios
-e torna a arquitetura legível sem depender de convenções implícitas.
+A camada HTTP é a única coordenadora entre identidade central e inicialização tenant.
 
-## Seleção de tenant
+## Infraestrutura
 
-A política pura `TenantSelection` recebe apenas IDs de tenants provenientes de
-memberships ativas e um ID solicitado opcional. Ela não conhece HTTP, facades,
-conexões ou container.
+PostgreSQL é obrigatório. Outras infraestruturas só existem com consumidor real.
 
-Regras:
+Redis, Horizon, Reverb, cache distribuído, workers ou WebSockets não fazem parte da fundação atual se nenhum fluxo executável os utilizar. Configuração, container, variável de ambiente ou dependência futura sem consumidor é resíduo e deve ser removida, podendo voltar na onda que efetivamente a exigir.
 
-- zero vínculos ativos: acesso negado;
-- um vínculo ativo sem seleção: usa o único tenant;
-- seleção não pertencente aos vínculos: acesso negado;
-- múltiplos vínculos sem seleção: exige seleção;
-- múltiplos vínculos com seleção autorizada: usa o tenant escolhido.
+O `docker-compose.yml` atual é validado por smoke test real no CI: o bootstrap cria `sislac_central`, permite autenticação TCP de `sislac_app` com a senha configurada e confirma que esse papel não recebe privilégios administrativos (`CREATEDB`, `CREATEROLE`, `SUPERUSER`).
 
-A consulta `ActiveTenantMemberships` retorna somente IDs necessários, em uma
-consulta ao banco central, sem carregar grafos Eloquent desnecessários.
+## Estratégia por ondas
 
-## Provisionamento
+1. fixar contrato executável do módulo no frontend/Supabase;
+2. implementar schema/regra Laravel mínima no banco tenant;
+3. executar testes de concordância, autorização e integridade;
+4. adaptar o consumidor;
+5. validar dados e operação;
+6. só então cortar o objeto Supabase substituído, quando aplicável.
 
-O usuário HTTP `sislac_app` nunca recebe `SUPERUSER`, `CREATEDB` ou
-`CREATEROLE`. O provisionamento roda fora do caminho normal de requisição e
-segue uma máquina de estados auditável:
+Não avançar uma nova onda com a anterior incompleta ou com CI vermelho.
 
-`provisioning → create database → migrations → seed mínimo → smoke check → active`.
+## Gates
 
-Falha não produz tenant parcialmente ativo. Retry é idempotente e a criação do
-banco usa advisory lock PostgreSQL para serializar provisionamentos do mesmo
-tenant.
+Toda mudança deve passar no mesmo SHA:
 
-## Concordância com Supabase
-
-`docs/contracts/supabase-baseline.json` fixa somente metadados da baseline:
-SHA do frontend, PostgreSQL major, fingerprints dos artefatos geradores,
-inventário estrutural, superfície consumida, storage, Edge Functions, realtime
-e findings conhecidos. Não contém linhas clínicas nem credenciais.
-
-Cada onda de domínio acrescenta um contrato específico. Para Pacientes,
-`docs/contracts/pacientes.json` registra a tabela `public.pacientes`, RLS e
-políticas observadas, índices relevantes, endpoints Laravel e diferenças
-arquiteturais aprovadas. O Laravel não simula RLS entre laboratórios dentro de
-uma mesma tabela: o isolamento primário é físico, um banco por laboratório, e
-a autorização central ocorre antes da inicialização do banco tenant.
-
-O gate `scripts/check-supabase-contract.php` valida integridade e contagens
-determinísticas do manifesto global no CI. Mudança de superfície do frontend
-exige atualização explícita da baseline antes de uma nova onda de migração.
-
-Nenhum objeto é removido ou reescrito apenas porque aparenta estar sem uso. A
-classificação de equivalência ocorre por onda de domínio, com evidência do
-contrato executável do frontend/Supabase.
-
-## Fases
-
-| Fase | Escopo | Estado |
-|---|---|---|
-| 0 | Laravel, Docker, CI, docs e health check | concluída |
-| 1A | PostgreSQL 17, plano central, UUID, constraints e seleção de tenant | concluída |
-| 1B | Boost, Sanctum, stancl/tenancy, isolamento e provisionamento | concluída |
-| 2A | primeira onda de domínio: Pacientes | em validação final |
-| 2B | Atendimentos → Coleta → Análise → Resultados → Financeiro | pendente |
-| 3 | adaptação progressiva do frontend para HTTP Laravel | pendente |
-| 4 | migração de dados e corte do Supabase | pendente |
-| 5 | PDF, WhatsApp oficial, integrações e serviços operacionais restantes | pendente |
-| 6 | SaaS comercial | pendente |
-
-## Gates de engenharia
-
-Cada mudança deve permanecer compreensível sem conhecimento implícito da
-implementação. O padrão é:
-
-- TDD: RED → GREEN → REFACTOR;
-- funções/classes pequenas e com responsabilidade única;
-- nomes que expressem regra de negócio;
-- nenhuma abstração sem consumidor real;
+- `composer validate --strict`;
+- `composer audit --locked`;
 - Pint;
-- Pest em PostgreSQL 17 real;
-- Composer audit;
-- contrato Supabase ↔ Laravel determinístico;
-- Larastan nível 8 obrigatório;
-- guards de fronteira e PostgreSQL-only;
-- testes de segurança, isolamento, concorrência, provisionamento e performance.
+- Larastan nível 8;
+- Pest em PostgreSQL real;
+- contrato Supabase ↔ Laravel;
+- guards de fronteira, banco, arquivos, `.env` e escopo arquitetural;
+- migrations centrais e tenant reproduzíveis;
+- provisionamento/smoke test quando a mudança tocar tenancy;
+- bootstrap real do PostgreSQL via `docker-compose.yml`.
+
+## Estado atual
+
+- fundação Laravel/PostgreSQL: concluída no código;
+- banco central: concluído;
+- database-per-lab/provisionamento: concluído e testado;
+- Pacientes: migrado;
+- conexão `supabase_source`: implementada e testada em modo de leitura;
+- Super Admin Laravel: fundação implementada e testada;
+- limpeza de scaffold/infraestrutura/pipeline frontend sem consumidor: concluída no código e protegida por guards;
+- Atendimentos: pausado até esta fundação passar todos os gates no mesmo SHA e ser integrada em `main`.

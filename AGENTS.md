@@ -1,109 +1,77 @@
-# SISLAC API — guia para agentes (Claude Code, Cursor, Codex)
+# SISLAC API — guia para agentes
 
-Leia antes de qualquer alteração. A referência normativa da arquitetura é o
-ADR‑001 (link em `docs/ARCHITECTURE.md`).
+Leia antes de qualquer alteração. A arquitetura canônica está em `docs/ARCHITECTURE.md` e na especificação `docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`.
 
-## O que é este repositório
+## Objetivo definitivo
 
-Backend em **Laravel 13 / PHP 8.4** do SISLAC, sistema de gestão de
-laboratórios de análises clínicas. **Multi-tenant, um banco PostgreSQL por
-laboratório**, um único deploy, todos os clientes em `sislac.com.br` (sem
-subdomínio). O front atual (Lovable + Supabase) continua em produção até a
-fase de corte; este backend é desenvolvido em paralelo por ondas verificáveis.
+O `sislac-api` é o backend Laravel definitivo do SISLAC.
+
+- O frontend React/Vite existente permanece durante a migração por ondas.
+- O Supabase atual permanece como baseline de produção e origem de leitura/concordância durante a transição.
+- O Laravel possui um banco PostgreSQL central para plataforma, identidade, vínculos, Super Admin e provisionamento.
+- Cada laboratório possui seu próprio banco PostgreSQL físico.
+- Cada novo laboratório é provisionado pelo Laravel: registro central → criação do banco → migrations tenant → smoke check → ativação.
+- O Super Admin é totalmente Laravel e server-rendered; não criar outro SPA.
+- O backend Laravel não mantém pipeline Vite/Tailwind/NPM enquanto o Super Admin Blade não tiver consumidor real de assets compilados. Isso não altera o frontend React/Vite externo existente.
 
 ## Regras que não se negociam
 
-1. **PostgreSQL sempre.** Nunca MySQL/MariaDB, nunca SQLite fora dos testes
-   locais. Conexões: `central` (padrão) e `tenant` (molde, preenchida em
-   runtime). Nunca chame `DB::connection('tenant')` fora do middleware de
-   tenancy.
-2. **Fronteira Platform ↔ Domain.** `app/Platform` não importa `App\Domain\*`;
-   `app/Domain` não importa `App\Platform\*`. O CI falha se cruzar
-   (`scripts/check-no-central-in-tenant.sh`).
-3. **O tenant vem do vínculo, não do cabeçalho.** `X-Tenant` só escolhe entre
-   os laboratórios aos quais o usuário autenticado já pertence; a API confere
-   o vínculo em `memberships` antes de aceitar.
-4. **Segredos nunca no repositório.** Só `.env.example` é comitado. Chaves de
-   API (Meta, gateway, S3) vêm de variáveis de ambiente do host.
-5. **Dados de paciente são dados de saúde (LGPD art. 11).** Em dev e testes,
-   só dados sintéticos ou anonimizados. Nunca copie dump de produção para o PC.
-6. **Auditoria é append-only.** Trilhas clínicas e financeiras nunca são
-   apagadas ou reescritas por código de aplicação (RDC 978/2025 ANVISA).
-7. **WhatsApp só pela Cloud API oficial da Meta.** Nunca Baileys ou libs não
-   oficiais.
-8. **Sem `git push --force` em `main`.** Sem commit que quebre os gates do CI.
-9. **Backend simples e funcional.** Este repositório é uma API, não uma
-   plataforma genérica. Não criar camada, pacote, painel, barramento, DTO,
-   repository, event bus, CQRS, cache, fila ou abstração “para o futuro” sem
-   consumidor real e necessidade demonstrada no fluxo atual.
+1. **PostgreSQL sempre.** Produção usa PostgreSQL. Conexões centrais e tenant devem seguir `config/database.php` e `config/tenancy.php`.
+2. **Database-per-lab.** O isolamento primário dos laboratórios é físico. `stancl/tenancy` é a implementação adotada; não criar uma segunda estratégia de tenancy.
+3. **Banco central não contém domínio clínico.** Ele guarda apenas plataforma, usuários centrais, tenants, memberships, planos, assinaturas, provisionamento e auditoria.
+4. **O banco tenant nasce das migrations versionadas.** Nunca criar schema clínico manualmente em produção.
+5. **Supabase é a referência durante a migração.** Regras e dados atuais são lidos para concordância; objetos só são substituídos/cortados após equivalência comprovada.
+6. **Segredos nunca no repositório.** Apenas `.env.example` é versionado.
+7. **Dados de paciente são sensíveis.** Testes usam somente dados sintéticos ou anonimizados.
+8. **Auditoria clínica/financeira é append-only quando o contrato exigir.** Não apagar trilhas por conveniência.
+9. **Sem `git push --force` em `main`.** Nenhum commit pode quebrar os gates.
+10. **Backend enxuto.** Não criar Repository, DTO, Manager, Adapter, CQRS, event bus, cache, fila, Redis, WebSocket ou pacote “para o futuro” sem consumidor real e necessidade demonstrada.
+11. **Sem infraestrutura futura no `.env`, Docker ou CI.** Configuração sem código consumidor é resíduo e deve ser removida; volta somente na onda que a usar.
+12. **Super Admin simples.** Usar recursos nativos do Laravel e o banco central. Não adicionar Filament/Livewire/pacote de RBAC sem necessidade comprovada.
+13. **Sem pipeline frontend preventivo no backend.** Vite, Tailwind, NPM ou equivalente só entram quando uma view Laravel realmente consumir os assets compilados e a necessidade estiver coberta por teste/guard.
+
+## Fronteiras
+
+- `app/Platform` conhece banco central, Super Admin, tenancy e provisionamento; não importa regras de `App\Domain`.
+- `app/Domain` contém regras do laboratório e opera no contexto tenant; não acessa explicitamente o banco central.
+- A camada HTTP pode coordenar identidade/seleção de tenant, mas não deve misturar dados centrais e clínicos na mesma persistência.
+- A conexão `supabase_source` é somente baseline/transição, usa PostgreSQL em modo de leitura e nunca é a conexão default da aplicação.
 
 ## Como trabalhar
 
-- **Documentação oficial é normativa.** Confirme APIs e comportamento na versão
-  instalada antes de implementar; o código legado serve como contrato de
-  comportamento, não como justificativa para contrariar segurança ou o framework.
-- **Código legível por humanos.** Nomes devem expressar o negócio; cada classe tem
-  uma responsabilidade clara; não crie helper, service, repository, DTO ou trait
-  sem uma fronteira concreta que justifique sua existência.
-- **YAGNI e DRY com critério.** Não antecipe extensibilidade e não abstraia uma
-  única chamada apenas para reduzir linhas. Extraia quando houver regra de negócio,
-  reutilização real ou isolamento que melhore o teste e a leitura.
-- **Prefira o caminho mais curto do Laravel.** Route + middleware + Form Request +
-  controller/action + Eloquent/Query Builder é o padrão. Só adicione outra camada
-  quando ela eliminar duplicação real, isolar uma regra relevante ou for exigida
-  por segurança/transação/testabilidade.
-- **Nenhum módulo futuro por antecipação.** Atendimentos, coleta, análise,
-  resultados, financeiro e integrações entram somente na própria onda, a partir
-  do contrato executável correspondente. Pacientes não deve carregar abstrações
-  desses módulos.
-- **TDD para comportamento.** Novo comportamento nasce de um teste que falha pelo
-  motivo esperado, recebe a implementação mínima correta e volta a ficar verde.
-- Formatação: `vendor/bin/pint` (preset `laravel`, sem regras extras).
-- Testes: `vendor/bin/pest`. Nomes dos testes em português e orientados ao
-  comportamento (`it('recalcula o total quando um exame é cancelado')`).
-- Análise estática: `vendor/bin/phpstan analyse` com **Larastan nível 8**; é gate
-  obrigatório, não aviso opcional.
-- Dependências: `composer audit --locked` deve permanecer verde.
-- Migrations: `database/migrations/central/` para o banco central e
-  `database/migrations/tenant/` para os bancos de laboratório. Nunca DDL manual
-  como fonte de verdade.
-- Regras de negócio hoje em triggers/RPCs do Supabase são preservadas por testes
-  de concordância e movidas apenas quando a implementação Laravel equivalente
-  estiver comprovada.
-- Cada módulo migrado deve possuir contrato versionado em `docs/contracts/` com
-  SHA da fonte de referência, diferenças aprovadas e testes sintéticos de
-  concordância antes de qualquer corte no frontend.
-- Commits pequenos, mensagens no formato `tipo: resumo` (`feat:`, `fix:`,
-  `chore:`, `docs:`, `test:`), em português.
+- **Documentação oficial é normativa.** Verifique a versão instalada e documentação oficial Laravel 13, PostgreSQL, Supabase e `stancl/tenancy` antes de mudar comportamento.
+- Código legado/Supabase é contrato comportamental, não justificativa para contrariar segurança ou o framework.
+- Prefira Route + Middleware + FormRequest + Controller/Action/Query + Eloquent/Query Builder. Outra camada só entra quando elimina duplicação real ou isola regra relevante.
+- TDD para novo comportamento: RED pelo motivo esperado → implementação mínima → GREEN → refactor apenas se necessário.
+- Commits pequenos e mensagens `tipo: resumo`.
+- Nenhuma onda futura enquanto a fundação/onda atual não estiver verde no mesmo SHA.
 
-## Laravel Boost
+## Gates obrigatórios
 
-Laravel Boost está instalado e versionado. Não repita `composer require` nem
-`boost:install` a cada sessão. Agentes suportados devem usar as diretrizes e
-skills geradas pelo Boost; `CLAUDE.md` contém as diretrizes específicas do
-Claude Code. `boost.json` é a configuração versionada da instalação.
+```bash
+composer validate --strict
+composer audit --locked --no-interaction
+vendor/bin/pint --test
+vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+vendor/bin/pest --parallel
+```
+
+Também executar todos os `scripts/check-*.sh` aplicáveis.
 
 ## Mapa
 
-| Caminho | O que é |
-|---------|---------|
-| `app/Platform/` | plano central e identidade |
-| `app/Domain/` | regras do laboratório |
-| `app/Domain/Pacientes/` | primeira onda de domínio migrada para Laravel |
-| `config/database.php` | conexões `central` e `tenant` |
-| `database/migrations/tenant/` | schema reproduzível de cada laboratório |
-| `docs/contracts/` | baseline Supabase e contratos por módulo |
-| `docker/`, `docker-compose.yml` | PHP-FPM, Nginx, Postgres, Redis, pgAdmin |
-| `docs/` | arquitetura, deploy, segurança e especificações |
-| `scripts/` | guards do CI |
-| `.github/workflows/ci.yml` | Pint · Larastan · Pest · audit · guards |
+| Caminho | Responsabilidade |
+|---|---|
+| `app/Platform/` | central, Super Admin, tenancy, provisionamento e leitura de transição do Supabase |
+| `app/Domain/` | domínio do laboratório no banco dedicado |
+| `app/Domain/Pacientes/` | primeira onda de domínio já migrada |
+| `config/database.php` | conexões central, tenant template e origem Supabase de transição |
+| `config/tenancy.php` | database-per-lab com `DatabaseTenancyBootstrapper` |
+| `database/migrations/central/` | schema central |
+| `database/migrations/tenant/` | schema reproduzível dos laboratórios |
+| `docs/contracts/` | baseline e contratos de concordância |
+| `scripts/` | guards de CI |
 
 ## Fase atual
 
-**Fundação concluída; primeira onda de domínio em validação final.** Banco
-central, Sanctum stateful, seleção segura de tenant, isolamento multi-database e
-provisionamento reproduzível já possuem implementação e testes. O módulo
-**Pacientes** possui schema tenant, `friendly_id`, autorização, leitura por
-cursor, criação e edição no branch da onda atual. O contrato normativo dessa
-onda é `docs/contracts/pacientes.json`; antes de adaptar o frontend, devem passar
-os testes de concordância, segurança e performance e todos os gates do CI.
+A fundação multi-database, Pacientes, `supabase_source` read-only e a fundação do Super Admin Laravel estão implementados. Atendimentos permanece pausado. A fase atual é exclusivamente validar a limpeza final, o bootstrap PostgreSQL real e todos os gates no mesmo SHA antes de integrar esta fundação em `main` e abrir a próxima onda de domínio.

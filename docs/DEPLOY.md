@@ -1,67 +1,69 @@
-# Deploy — VPS (Hostinger, Ubuntu 24.04)
+# Deploy — VPS (Ubuntu 24.04)
 
-Domínio da API: `api.sislac.com.br`. O front (Lovable/Vercel) continua em
-`sislac.com.br`; todos os laboratórios usam esse mesmo endereço.
+Este guia descreve somente a fundação atualmente implementada no repositório.
+O frontend permanece separado em `sislac.com.br` e a API Laravel é publicada em
+`api.sislac.com.br`.
 
-Este guia cobre o **primeiro deploy** de uma VPS zerada. A VPS hospeda:
+## Arquitetura implantada
 
-- **PostgreSQL 17** (via Docker Compose) — todos os bancos: `sislac_central` e
-  `sislac_t_XXXX`.
-- **Redis 7** — cache, filas, sessão, rate limit.
-- **Nginx (público)** — TLS via Let's Encrypt, faz `proxy_pass` para o Nginx
-  do compose em `127.0.0.1:8080`.
-- **Nginx (interno, no compose)** — serve o Laravel.
-- **PHP‑FPM 8.4** com o código Laravel.
-- **pgAdmin** — só escutando em `127.0.0.1:5050`, acesso via túnel SSH.
+A VPS executa via Docker Compose:
 
-Serviços que o Fase 2 acrescenta: Horizon, Reverb, scheduler, Chromium.
+- PostgreSQL 17: banco central `sislac_central` e bancos físicos dos laboratórios;
+- PHP-FPM 8.4: aplicação Laravel;
+- Nginx interno: exposto somente em `127.0.0.1:8080`;
+- pgAdmin opcional: perfil `tools`, exposto somente em `127.0.0.1:5050`.
 
-## 1 · Preparar a VPS
+Cache, sessão e fila usam PostgreSQL nesta fundação. O banco de cada novo
+laboratório é criado pelo `TenantProvisioner`; não deve ser criado manualmente.
+
+## 1. Preparar a VPS
+
+Como `root`:
 
 ```bash
-# Como root, uma vez
 apt update && apt upgrade -y
-apt install -y ca-certificates curl gnupg ufw fail2ban
+apt install -y ca-certificates curl gnupg ufw fail2ban git nginx certbot python3-certbot-nginx
 
-# Docker Engine + Compose plugin
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-echo "deb [signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
-apt update && apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+  | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
-# Usuário de deploy (evita rodar tudo como root)
+echo "deb [signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+  > /etc/apt/sources.list.d/docker.list
+
+apt update
+apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
 adduser sislac
 usermod -aG docker sislac
-
-# SSH: entre com `sislac` daqui em diante. Chaves em ~sislac/.ssh/authorized_keys
 ```
 
-## 2 · Firewall
+Firewall mínimo:
 
 ```bash
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow 22/tcp        # SSH
-ufw allow 80/tcp        # HTTP (redirect para 443)
-ufw allow 443/tcp       # HTTPS
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
 ufw enable
 ```
 
-Nenhuma outra porta é aberta. Postgres, Redis, pgAdmin e o Nginx interno
-escutam apenas em `127.0.0.1` (feito pelo `docker-compose.yml`), então só o
-Nginx público na porta 443 fala com o mundo.
+PostgreSQL, pgAdmin e o Nginx do compose permanecem ligados apenas ao loopback.
 
-## 3 · Clonar e configurar
+## 2. Clonar e configurar
+
+Com o usuário de deploy:
 
 ```bash
 su - sislac
 git clone git@github.com:DevCactusTecnologia/sislac-api.git
 cd sislac-api
-
 cp .env.example .env
 nano .env
 ```
 
-O que muda em relação ao exemplo (valores de produção):
+Defina pelo menos:
 
 ```dotenv
 APP_ENV=production
@@ -70,52 +72,88 @@ APP_URL=https://api.sislac.com.br
 FRONTEND_URL=https://sislac.com.br
 CORS_ALLOWED_ORIGINS=https://sislac.com.br
 
-# Redis assume cache, sessão e filas
-CACHE_STORE=redis
-SESSION_DRIVER=redis
+DB_CONNECTION=central
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_DATABASE=sislac_central
+DB_USERNAME=sislac_app
+DB_PASSWORD=<senha-forte-do-usuario-da-aplicacao>
+DB_ROOT_USER=postgres
+DB_ROOT_PASSWORD=<senha-forte-administrativa>
+
+TENANT_DB_HOST=127.0.0.1
+TENANT_DB_PORT=5432
+TENANT_DB_USERNAME=sislac_app
+TENANT_DB_PASSWORD=<mesma-senha-de-DB_PASSWORD>
+
+CACHE_STORE=database
+SESSION_DRIVER=database
 SESSION_ENCRYPT=true
 SESSION_SECURE_COOKIE=true
-QUEUE_CONNECTION=redis
-
-# Senhas: cada uma com `openssl rand -base64 32`
-DB_PASSWORD=...
-TENANT_DB_PASSWORD=...        # igual a DB_PASSWORD (mesmo papel sislac_app)
-DB_ROOT_PASSWORD=...
-REDIS_PASSWORD=...
-PGADMIN_PASSWORD=...
-PDF_SHARE_SECRET=...
-INTERNAL_WEBHOOK_SECRET=...
+QUEUE_CONNECTION=database
 ```
 
-Os hosts (`DB_HOST`, `REDIS_HOST`…) podem ficar como no exemplo: dentro do
-compose o `docker-compose.yml` já os sobrescreve para `postgres` e `redis`.
+Gere as senhas no próprio servidor, por exemplo:
 
-## 4 · Subir o compose
+```bash
+openssl rand -base64 32
+```
+
+As variáveis `SUPABASE_DB_*` são necessárias somente enquanto operações de
+transição precisarem consultar a origem Supabase em modo somente leitura. Não
+use credencial com permissão de escrita para essa conexão.
+
+## 3. Primeira subida
+
+O script `docker/postgres/init/01-create-central.sql` roda apenas quando o volume
+PostgreSQL é criado pela primeira vez. Ele cria `sislac_app` e
+`sislac_central`. Os bancos dos laboratórios são criados posteriormente pelo
+Laravel.
+
+Suba primeiro somente o PostgreSQL, instale as dependências e prepare o banco
+central antes de expor a aplicação:
 
 ```bash
 docker compose build
-docker compose up -d
+docker compose up -d postgres
 docker compose run --rm app composer install --no-dev --optimize-autoloader
 docker compose run --rm app php artisan key:generate --force
-docker compose run --rm app php artisan config:cache
-docker compose run --rm app php artisan route:cache
-docker compose run --rm app php artisan event:cache
 docker compose run --rm app php artisan migrate --database=central --force
 ```
 
-A partir da Fase 1, também:
+Crie o primeiro Super Admin explicitamente. A senha é solicitada de forma
+interativa e não é passada na linha de comando:
 
 ```bash
-docker compose run --rm app php artisan tenants:migrate --force
+docker compose run --rm app php artisan admin:super-user SEU_EMAIL
 ```
 
-## 5 · Nginx público + TLS
+O comando solicita `Nome`, `Senha` e `Confirme a senha`. Para promover um
+usuário central já existente, execute o mesmo comando com o e-mail dele; a senha
+atual é preservada.
 
-Fora do compose (na VPS), um Nginx padrão do sistema faz o TLS e passa para o
-container:
+Finalize os caches e suba a aplicação:
+
+```bash
+docker compose run --rm app php artisan config:cache
+docker compose run --rm app php artisan route:cache
+docker compose run --rm app php artisan event:cache
+docker compose up -d app nginx
+```
+
+Para abrir o pgAdmin localmente na VPS, quando necessário:
+
+```bash
+docker compose --profile tools up -d pgadmin
+```
+
+A porta `5050` não deve ser publicada para a internet; acesse-a por túnel SSH.
+
+## 4. Nginx público e TLS
+
+Crie `/etc/nginx/sites-available/api.sislac.com.br`:
 
 ```nginx
-# /etc/nginx/sites-available/api.sislac.com.br
 server {
     listen 80;
     server_name api.sislac.com.br;
@@ -123,14 +161,14 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
     server_name api.sislac.com.br;
 
-    ssl_certificate     /etc/letsencrypt/live/api.sislac.com.br/fullchain.pem;
+    ssl_certificate /etc/letsencrypt/live/api.sislac.com.br/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/api.sislac.com.br/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
 
-    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
@@ -149,35 +187,63 @@ server {
 }
 ```
 
-Certificado (só a API precisa de um aqui — o front em `sislac.com.br` tem o
-seu próprio, na hospedagem dele; não há subdomínio por laboratório):
+Ative o site e emita o certificado:
 
 ```bash
-apt install -y nginx certbot python3-certbot-nginx
-ln -s /etc/nginx/sites-available/api.sislac.com.br /etc/nginx/sites-enabled/
+ln -s /etc/nginx/sites-available/api.sislac.com.br /etc/nginx/sites-enabled/api.sislac.com.br
+nginx -t
+systemctl reload nginx
 certbot --nginx -d api.sislac.com.br
 ```
 
-Renovação automática cai no timer do certbot.
+## 5. Atualizações
 
-## 6 · Backup
-
-`pgBackRest` para PostgreSQL, com repositório em bucket S3-compatível
-(Cloudflare R2 ou Backblaze B2). Configuração completa entra na Fase 1 junto
-com o provisionamento.
-
-Rotina mínima até lá:
+Em cada deploy de código:
 
 ```bash
-# Dump diário do central + de cada tenant, retenção de 30 dias
-docker compose exec postgres pg_dumpall -U postgres | gzip > backup-$(date +%F).sql.gz
+cd /home/sislac/sislac-api
+git pull --ff-only
+docker compose build app
+docker compose run --rm app composer install --no-dev --optimize-autoloader
+docker compose run --rm app php artisan migrate --database=central --force
+docker compose run --rm app php artisan config:cache
+docker compose run --rm app php artisan route:cache
+docker compose run --rm app php artisan event:cache
+docker compose up -d app nginx
 ```
 
-## 7 · Verificações finais
+Migrations de tenant são aplicadas pelo fluxo de provisionamento para novos
+laboratórios. Qualquer atualização em massa de bancos existentes deve usar o
+comando/fluxo explicitamente validado para essa finalidade; não execute SQL
+manual em lote.
 
-- [ ] `curl https://api.sislac.com.br/api/health` responde 200 com `"status": "ok"`.
-- [ ] `docker compose ps` mostra todos os serviços `healthy`.
-- [ ] `nmap -p 5432,6379,5050 <ip-da-vps>` só vê `closed` ou `filtered`.
-- [ ] Túnel SSH para pgAdmin funciona (ver [PGADMIN.md](PGADMIN.md)).
-- [ ] Túnel SSH para Postgres via DBeaver funciona (ver [CONECTAR_DBEAVER.md](CONECTAR_DBEAVER.md)).
-- [ ] Restauração de backup ensaiada em ambiente separado.
+## 6. Backup
+
+A fundação atual não instala um serviço externo de backup. Até existir uma
+solução operacional validada no repositório, faça backup do cluster para um
+destino seguro fora da VPS e teste a restauração periodicamente.
+
+Exemplo de dump manual do cluster:
+
+```bash
+docker compose exec -T postgres pg_dumpall -U "$DB_ROOT_USER" \
+  | gzip > "backup-$(date +%F-%H%M).sql.gz"
+```
+
+Não mantenha a única cópia do backup no mesmo servidor.
+
+## 7. Verificação pós-deploy
+
+```bash
+docker compose ps
+curl --fail --silent --show-error https://api.sislac.com.br/api/health
+```
+
+Confirme também:
+
+- `5432`, `5050` e `8080` não estão acessíveis externamente;
+- `/admin/login` abre via HTTPS;
+- login do Super Admin funciona;
+- a listagem de laboratórios abre;
+- um provisionamento de homologação cria o banco físico, executa as migrations e termina com o laboratório ativo;
+- uma restauração de backup foi ensaiada em ambiente separado.
