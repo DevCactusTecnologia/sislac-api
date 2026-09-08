@@ -35,6 +35,12 @@ Artisan::command('admin:super-user {email : E-mail do Super Admin}', function (s
         return Command::FAILURE;
     }
 
+    if (mb_strlen($password) < 12) {
+        $this->error('A senha deve ter pelo menos 12 caracteres.');
+
+        return Command::FAILURE;
+    }
+
     if (! hash_equals($password, $confirmation)) {
         $this->error('A confirmação da senha não confere.');
 
