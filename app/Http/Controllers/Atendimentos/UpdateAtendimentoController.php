@@ -55,7 +55,7 @@ final class UpdateAtendimentoController extends Controller
         unset($payload['justificativa']);
 
         $payload['_audit_user_id'] = $userId;
-        $userEmail = $user?->getAttribute('email');
+        $userEmail = $user->getAttribute('email');
 
         if (is_string($userEmail)) {
             $payload['_audit_user_email'] = $userEmail;
