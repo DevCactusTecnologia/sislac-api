@@ -158,8 +158,8 @@ it('cria pai exames e pagamentos em uma única operação com campos protegidos 
         'protocolo' => $protocolo,
         'status_atendimento' => 'Amostra Analisada',
         'status_pagamento' => 'Pagamento parcial',
-        'subtotal' => '150.00',
-        'desconto_total' => '0.00',
+        'subtotal' => '160.00',
+        'desconto_total' => '10.00',
         'acrescimo_total' => '0.00',
         'total' => '150.00',
     ]);
