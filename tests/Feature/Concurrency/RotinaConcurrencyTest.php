@@ -2,7 +2,6 @@
 
 use App\Platform\Models\Tenant;
 use App\Platform\Models\User;
-use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -52,12 +51,20 @@ beforeEach(function () {
     config()->set('services.supabase.url', 'https://example.supabase.co');
     config()->set('services.supabase.publishable_key', 'test-publishable-key');
     Http::preventStrayRequests();
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->rotinaConcurrencyUser->id,
-            'email' => $this->rotinaConcurrencyUser->email,
-        ], 200),
-    ]);
+
+    $userId = $this->rotinaConcurrencyUser->id;
+    $userEmail = $this->rotinaConcurrencyUser->email;
+
+    Http::fake(function ($request) use ($userId, $userEmail) {
+        if ($request->hasHeader('Authorization', 'Bearer invalid-token')) {
+            return Http::response(['message' => 'invalid'], 401);
+        }
+
+        return Http::response([
+            'id' => $userId,
+            'email' => $userEmail,
+        ], 200);
+    });
 
     $this->withHeader('Origin', 'https://sislac.com.br');
     $this->withHeader('X-Tenant', $this->rotinaConcurrencyTenantId);
@@ -131,8 +138,12 @@ function rotinaConcurrencyTransitionProcess(
 require getcwd().'/vendor/autoload.php';
 $app = require getcwd().'/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-config(['database.default' => 'tenant']);
-config(['database.connections.tenant.database' => $argv[1]]);
+$tenantConnection = config('database.connections.tenant_template');
+$tenantConnection['database'] = $argv[1];
+config([
+    'database.default' => 'tenant',
+    'database.connections.tenant' => $tenantConnection,
+]);
 Illuminate\Support\Facades\DB::purge('tenant');
 if ((int) $argv[6] > 0) {
     usleep((int) $argv[6]);
@@ -176,7 +187,12 @@ function rotinaConcurrencyConfigProcess(string $database, string $mode, int $del
 require getcwd().'/vendor/autoload.php';
 $app = require getcwd().'/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-config(['database.connections.tenant.database' => $argv[1]]);
+$tenantConnection = config('database.connections.tenant_template');
+$tenantConnection['database'] = $argv[1];
+config([
+    'database.default' => 'tenant',
+    'database.connections.tenant' => $tenantConnection,
+]);
 Illuminate\Support\Facades\DB::purge('tenant');
 if ((int) $argv[3] > 0) {
     usleep((int) $argv[3]);
@@ -291,10 +307,6 @@ it('não aceita sessão Laravel isolada como autenticação clínica da rotina',
 });
 
 it('rejeita Bearer Supabase inválido', function () {
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response(['message' => 'invalid'], 401),
-    ]);
-
     $this->withToken('invalid-token')
         ->getJson('/api/rotina/coleta')
         ->assertUnauthorized();
@@ -352,7 +364,7 @@ it('mantém auditoria append-only e registra evidência das transições', funct
     $auditId = (int) ($audits[0]['id'] ?? 0);
 
     expect(fn () => $pdo->exec("UPDATE atendimento_audit SET acao = 'adulterada' WHERE id = {$auditId}"))
-        ->toThrow(QueryException::class);
+        ->toThrow(PDOException::class);
     expect(fn () => $pdo->exec("DELETE FROM atendimento_audit WHERE id = {$auditId}"))
-        ->toThrow(QueryException::class);
+        ->toThrow(PDOException::class);
 });
