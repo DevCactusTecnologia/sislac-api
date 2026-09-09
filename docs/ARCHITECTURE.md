@@ -1,6 +1,6 @@
 # Arquitetura — SISLAC API
 
-A especificação normativa desta migração é `docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`, complementada pela Fase 0 aprovada em `docs/superpowers/specs/2026-09-08-fase-0-saneamento-fundacao-design.md`. Documentação oficial Laravel 13, PostgreSQL, Supabase e `stancl/tenancy` prevalece sobre comportamento legado.
+A especificação normativa desta migração é `docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`, complementada pela Fase 0 aprovada em `docs/superpowers/specs/2026-09-08-fase-0-saneamento-fundacao-design.md`. A onda de Rotina / Fluxo Operacional é especificada em `docs/superpowers/specs/2026-09-09-rotina-fluxo-operacional-design.md`. Documentação oficial Laravel 13, PostgreSQL, Supabase e `stancl/tenancy` prevalece sobre comportamento legado.
 
 ## Objetivo
 
@@ -104,7 +104,7 @@ Dados clínicos permanecem nos bancos tenant, nunca duplicados no central.
 
 ## Domínio do laboratório
 
-`app/Domain` contém as regras que operam no banco dedicado do laboratório. Pacientes é a primeira onda concluída. Atendimentos está implementado no PR #7 sobre a fundação da Fase 0 e permanece isolado do `main` e do cutover do frontend até que os gates e dependências da onda sejam concluídos.
+`app/Domain` contém as regras que operam no banco dedicado do laboratório. Pacientes é a primeira onda concluída. Atendimentos e Rotina / Fluxo Operacional estão implementados em branches encadeadas e permanecem isolados do `main` e do cutover do frontend até que as ondas dependentes e seus gates sejam concluídos.
 
 ### Atendimentos
 
@@ -120,7 +120,39 @@ Bearer Supabase
   -> domínio no banco físico do laboratório
 ```
 
-Não existe autenticação clínica Laravel/Sanctum para esse módulo. Não existe `DELETE /api/atendimentos`; cancelamento é evento de negócio auditado. A disponibilidade do backend não autoriza o cutover do React/Vite: Rotina e Financeiro/Convênios/Caixa ainda precisam cobrir as invariantes dependentes antes da troca do consumidor.
+Não existe autenticação clínica Laravel/Sanctum para esse módulo. Não existe `DELETE /api/atendimentos`; cancelamento é evento de negócio auditado. A disponibilidade do backend não autoriza o cutover do React/Vite.
+
+### Rotina / Fluxo Operacional
+
+A Rotina não cria um segundo agregado clínico. Ela opera diretamente sobre `atendimento_exames`, preservando Atendimentos como fonte de verdade e reutilizando `atendimento_audit`.
+
+O laboratório possui uma configuração singleton `lab_config.rotina_fluxo_modo` com três valores canônicos:
+
+- `completo`: coleta → bancada → analisado;
+- `coleta_resultado`: coleta encurta o fluxo e persiste o estado efetivo compatível sem materializar bancada;
+- `apenas_resultado`: etapas de coleta/bancada não são materializadas e o estado é normalizado para análise.
+
+A autoridade de integridade permanece no PostgreSQL. Triggers tenant impedem estados incompatíveis com o modo, protegem terminais e aplicam os short-circuits aprovados. O Laravel não mantém uma segunda máquina de estados: ele recebe uma **intenção operacional**, bloqueia a ocorrência com `SELECT ... FOR UPDATE`, valida precondições de intenção que não podem ser inferidas apenas pelo estado efetivo, gera timestamps/responsáveis server-side e deixa o banco validar a transição final.
+
+As intenções HTTP são `coletar`, `recoletar`, `iniciar_analise`, `finalizar_analise` e `cancelar`. Repetição idempotente só é sucesso quando o estado persistido já representa exatamente o resultado da mesma intenção; por exemplo, duas coletas concorrentes não reescrevem timestamp/responsável nem duplicam auditoria. `finalizar_analise` exige que a intenção de início já tenha produzido `em_bancada`, evitando que uma intenção stale salte a operação depois de outra transição concorrente.
+
+As rotas são:
+
+```text
+GET   /api/rotina/config
+PATCH /api/rotina/config
+GET   /api/rotina/coleta
+GET   /api/rotina/analise
+POST  /api/rotina/exames/{id}/transicao
+```
+
+As filas de Coleta e Análise são **consultas derivadas** de `atendimentos` + `atendimento_exames`; não existe tabela de fila, batch endpoint, worker, Redis ou infraestrutura assíncrona. Etapa desativada pelo modo retorna `200` com coleção vazia e `enabled: false`. Exames `TERCEIRIZADO` ficam fora das filas/transições internas.
+
+A troca de modo é transacional: bloqueia `lab_config`, persiste a configuração e normaliza de forma set-based apenas ocorrências internas afetadas, preservando dados clínicos reais e fazendo rollback integral em caso de falha. Mudanças concorrentes de modo são serializadas pelo banco.
+
+A cadeia de segurança continua sendo Bearer Supabase → usuário central já correlacionado → membership ativa → tenant autorizado → permissão específica. A onda adiciona `registrar_coleta`, `analisar_amostra` e `configuracoes_sistema`; não existe auto-provisionamento por token nem autorização a partir de metadata do Supabase.
+
+Esta implementação não inclui o frontend `sislacprivado`, cutover, resultados/PDF, estoque, laboratório de apoio, Financeiro/Convênios/Caixa, Redis, WebSocket, CQRS ou event bus. Essas responsabilidades permanecem em ondas próprias.
 
 ## Fronteira Platform ↔ Domain
 
@@ -171,4 +203,4 @@ Toda mudança deve passar no mesmo SHA:
 - migrations centrais e tenant reproduzíveis;
 - provisionamento/smoke test quando a mudança tocar tenancy.
 
-Antes de declarar uma onda conforme, executar também o gate live em ambiente confiável com credencial PostgreSQL read-only.
+Antes de declarar uma onda conforme, executar também o gate live em ambiente confiável com credencial PostgreSQL read-only quando existir contrato live aplicável à onda.

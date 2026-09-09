@@ -11,6 +11,11 @@ use App\Http\Controllers\Pacientes\CreatePacienteController;
 use App\Http\Controllers\Pacientes\ListPacientesController;
 use App\Http\Controllers\Pacientes\ShowPacienteController;
 use App\Http\Controllers\Pacientes\UpdatePacienteController;
+use App\Http\Controllers\Rotina\ListRotinaAnaliseController;
+use App\Http\Controllers\Rotina\ListRotinaColetaController;
+use App\Http\Controllers\Rotina\ShowRotinaConfigController;
+use App\Http\Controllers\Rotina\TransitionRotinaExameController;
+use App\Http\Controllers\Rotina\UpdateRotinaConfigController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class)->name('api.health');
@@ -52,3 +57,24 @@ Route::middleware(['supabase.auth', 'tenant'])
     ->patch('/atendimentos/{id}', UpdateAtendimentoController::class)
     ->whereNumber('id')
     ->name('atendimentos.update');
+
+Route::middleware(['supabase.auth', 'tenant'])
+    ->get('/rotina/config', ShowRotinaConfigController::class)
+    ->name('rotina.config.show');
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:configuracoes_sistema'])
+    ->patch('/rotina/config', UpdateRotinaConfigController::class)
+    ->name('rotina.config.update');
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_atendimentos'])
+    ->get('/rotina/coleta', ListRotinaColetaController::class)
+    ->name('rotina.coleta.index');
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_atendimentos'])
+    ->get('/rotina/analise', ListRotinaAnaliseController::class)
+    ->name('rotina.analise.index');
+
+Route::middleware(['supabase.auth', 'tenant'])
+    ->post('/rotina/exames/{id}/transicao', TransitionRotinaExameController::class)
+    ->whereNumber('id')
+    ->name('rotina.exames.transition');

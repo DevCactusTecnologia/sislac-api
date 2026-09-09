@@ -27,11 +27,12 @@ Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - banco central e database-per-lab: concluídos;
 - autorização central por membership: concluída;
 - autenticação clínica transitória por Supabase Auth: implementada sem auto-provisionamento;
-- provisionamento idempotente de novo laboratório: concluído e testado, incluindo as migrations/invariantes de Atendimentos na branch da onda;
+- provisionamento idempotente de novo laboratório: concluído e testado, incluindo as migrations/invariantes de Atendimentos e Rotina na branch da onda;
 - conexão `supabase_source` de leitura/concordância: implementada, com sessão read-only e credencial dedicada recomendada;
 - Super Admin Laravel: fundação implementada e testada;
 - Pacientes: primeira onda de domínio já migrada;
-- Atendimentos: backend Laravel implementado no PR #7 sobre a fundação da Fase 0, com autenticação clínica Bearer/Supabase; o frontend ainda não faz cutover para essas rotas;
+- Atendimentos: backend Laravel implementado sobre a fundação da Fase 0, com autenticação clínica Bearer/Supabase; o frontend ainda não faz cutover para essas rotas;
+- Rotina / Fluxo Operacional: backend Laravel implementado e testado com três modos de fluxo, transições clínicas, filas derivadas e proteção de concorrência; o frontend ainda não faz cutover para essas rotas;
 - fila persistente/jobs: removidos enquanto não houver consumidor;
 - `plans`/`subscriptions`: removidos da baseline de novos bancos; instalações existentes são apenas auditadas antes de qualquer cleanup físico.
 
@@ -48,7 +49,21 @@ PATCH /api/atendimentos/{id}
 
 Todas as rotas clínicas de Atendimentos exigem Bearer validado pelo middleware `supabase.auth`, seleção de tenant autorizada e as permissões Laravel correspondentes. As permissões específicas são `visualizar_atendimentos`, `criar_atendimento`, `editar_atendimento`, `cancelar_atendimento` e `registrar_pagamento`. O `PATCH` exige as permissões de acordo com a intenção real do payload. Não existe `DELETE /api/atendimentos`; cancelamento preserva e audita o atendimento.
 
-A implementação do backend não autoriza por si só o cutover do frontend. Rotina e Financeiro/Convênios/Caixa ainda precisam cobrir as invariantes dependentes antes da troca do consumidor.
+### API de Rotina / Fluxo Operacional
+
+```text
+GET   /api/rotina/config
+PATCH /api/rotina/config
+GET   /api/rotina/coleta
+GET   /api/rotina/analise
+POST  /api/rotina/exames/{id}/transicao
+```
+
+A configuração `rotina_fluxo_modo` aceita `completo`, `coleta_resultado` e `apenas_resultado`. O PostgreSQL é a autoridade sobre as transições efetivas de `atendimento_exames`; o Laravel expressa a intenção, aplica `SELECT ... FOR UPDATE`, gera timestamps/responsáveis server-side e reaproveita a auditoria existente de Atendimentos. As filas de coleta e análise são consultas derivadas — não existem tabelas paralelas de fila.
+
+As ações clínicas disponíveis são `coletar`, `recoletar`, `iniciar_analise`, `finalizar_analise` e `cancelar`, sujeitas às permissões específicas e ao modo configurado. Repetições idempotentes não reescrevem timestamps/auditoria quando o estado persistido já representa exatamente a mesma intenção. Exames terceirizados não entram nas filas internas nem na máquina de fluxo interno.
+
+A implementação do backend não autoriza por si só o cutover do frontend. Financeiro/Convênios/Caixa e as demais dependências da migração ainda precisam de suas próprias ondas e provas de equivalência antes da troca do consumidor.
 
 ## Desenvolvimento
 
