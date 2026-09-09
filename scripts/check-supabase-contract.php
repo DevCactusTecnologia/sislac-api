@@ -11,17 +11,14 @@ if (! is_array($data)) {
 }
 
 $required = [
+    ['version'],
+    ['captured_at'],
+    ['frontend', 'repository'],
     ['frontend', 'sha'],
+    ['supabase', 'project_ref'],
     ['supabase', 'postgres_major'],
-    ['source_fingerprints', 'types_ts_blob'],
-    ['source_fingerprints', 'runtime_contract_script_blob'],
-    ['runtime_contract', 'tables_views_consumed'],
-    ['runtime_contract', 'rpcs_consumed'],
-    ['runtime_contract', 'edge_functions_consumed'],
-    ['runtime_contract', 'buckets_consumed'],
-    ['runtime_contract', 'realtime_tables'],
-    ['storage_inventory'],
-    ['edge_function_inventory'],
+    ['supabase', 'runtime'],
+    ['migrated_contracts'],
     ['sha256'],
 ];
 
@@ -35,6 +32,17 @@ foreach ($required as $segments) {
 
         $value = $value[$segment];
     }
+}
+
+if ($data['version'] !== 2
+    || $data['frontend']['repository'] !== 'DevCactusTecnologia/sislacprivado'
+    || ! is_string($data['frontend']['sha'])
+    || preg_match('/\A[0-9a-f]{40}\z/', $data['frontend']['sha']) !== 1
+    || $data['supabase']['project_ref'] !== 'eramenhnqcbyctyiqwlm'
+    || $data['supabase']['postgres_major'] !== 17
+    || $data['supabase']['runtime'] !== 'single-tenant'
+    || $data['migrated_contracts'] !== ['pacientes']) {
+    throw new RuntimeException('Manifesto Supabase não representa a baseline aprovada da Fase 0.');
 }
 
 $expectedHash = (string) $data['sha256'];
@@ -66,18 +74,6 @@ $actualHash = hash('sha256', $canonical);
 
 if (! hash_equals($expectedHash, $actualHash)) {
     throw new RuntimeException('Hash do manifesto Supabase divergente.');
-}
-
-if ($data['supabase']['postgres_major'] !== 17
-    || $data['runtime_contract']['tables_views_consumed'] !== 77
-    || $data['runtime_contract']['rpcs_consumed'] !== 52
-    || $data['runtime_contract']['edge_functions_consumed'] !== 23
-    || $data['runtime_contract']['buckets_consumed'] !== 4) {
-    throw new RuntimeException('Contagens do contrato Supabase divergentes da baseline observada.');
-}
-
-if (count($data['storage_inventory']) !== 7 || count($data['edge_function_inventory']) !== 33) {
-    throw new RuntimeException('Inventário Supabase incompleto.');
 }
 
 echo "OK — manifesto Supabase íntegro e determinístico.\n";
