@@ -28,9 +28,11 @@ final class TransitionAtendimentoExame
                 $mode = $this->mode();
                 $status = (string) $exam->getAttribute('status');
 
-                if ($action === 'recoletar' && $status === 'finalizado') {
-                    throw new DomainException('Exame finalizado não pode ser reaberto nesta etapa.');
+                if ($this->alreadyApplied($action, $mode, $status)) {
+                    return $exam;
                 }
+
+                $this->assertActionAllowed($action, $status);
 
                 $attributes = $this->attributes($action, $mode, $actorName, $exam);
                 $exam->fill($attributes);
@@ -44,6 +46,30 @@ final class TransitionAtendimentoExame
             }
 
             throw $exception;
+        }
+    }
+
+    private function alreadyApplied(string $action, string $mode, string $status): bool
+    {
+        if ($action !== 'coletar') {
+            return false;
+        }
+
+        if ($mode === 'completo') {
+            return $status === 'coletado';
+        }
+
+        return $status === 'analisado';
+    }
+
+    private function assertActionAllowed(string $action, string $status): void
+    {
+        if ($action === 'recoletar' && $status === 'finalizado') {
+            throw new DomainException('Exame finalizado não pode ser reaberto nesta etapa.');
+        }
+
+        if ($action === 'finalizar_analise' && $status !== 'em_bancada') {
+            throw new DomainException('Análise só pode ser finalizada após seu início.');
         }
     }
 
