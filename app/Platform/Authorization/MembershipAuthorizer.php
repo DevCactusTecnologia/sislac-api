@@ -38,8 +38,25 @@ final class MembershipAuthorizer
         }
 
         return match ($role) {
-            'recepcionista' => true,
-            'analista', 'financeiro' => $permission === TenantPermission::ViewPatients,
+            'recepcionista' => in_array($permission, [
+                TenantPermission::ViewPatients,
+                TenantPermission::CreatePatient,
+                TenantPermission::EditPatient,
+                TenantPermission::ViewAppointments,
+                TenantPermission::CreateAppointment,
+                TenantPermission::EditAppointment,
+                TenantPermission::CancelAppointment,
+                TenantPermission::RegisterPayment,
+            ], true),
+            'analista' => in_array($permission, [
+                TenantPermission::ViewPatients,
+                TenantPermission::ViewAppointments,
+            ], true),
+            'financeiro' => in_array($permission, [
+                TenantPermission::ViewPatients,
+                TenantPermission::ViewAppointments,
+                TenantPermission::RegisterPayment,
+            ], true),
             default => false,
         };
     }

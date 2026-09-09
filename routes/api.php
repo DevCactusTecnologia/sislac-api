@@ -1,5 +1,11 @@
 <?php
 
+use App\Http\Controllers\Atendimentos\AtendimentoKpisController;
+use App\Http\Controllers\Atendimentos\ListAtendimentosController;
+use App\Http\Controllers\Atendimentos\ShowAtendimentoByProtocoloController;
+use App\Http\Controllers\Atendimentos\ShowAtendimentoController;
+use App\Http\Controllers\Atendimentos\StoreAtendimentoController;
+use App\Http\Controllers\Atendimentos\UpdateAtendimentoController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\Pacientes\CreatePacienteController;
 use App\Http\Controllers\Pacientes\ListPacientesController;
@@ -24,3 +30,25 @@ Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:editar_paciente
     ->patch('/pacientes/{id}', UpdatePacienteController::class)
     ->whereNumber('id')
     ->name('pacientes.update');
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_atendimentos'])
+    ->prefix('atendimentos')
+    ->group(function () {
+        Route::get('/', ListAtendimentosController::class)->name('atendimentos.index');
+        Route::get('/kpis', AtendimentoKpisController::class)->name('atendimentos.kpis');
+        Route::get('/protocolo/{protocolo}', ShowAtendimentoByProtocoloController::class)
+            ->where('protocolo', '[0-9]{7}')
+            ->name('atendimentos.show-protocolo');
+        Route::get('/{id}', ShowAtendimentoController::class)
+            ->whereNumber('id')
+            ->name('atendimentos.show');
+    });
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:criar_atendimento'])
+    ->post('/atendimentos', StoreAtendimentoController::class)
+    ->name('atendimentos.store');
+
+Route::middleware(['supabase.auth', 'tenant'])
+    ->patch('/atendimentos/{id}', UpdateAtendimentoController::class)
+    ->whereNumber('id')
+    ->name('atendimentos.update');

@@ -104,7 +104,23 @@ Dados clínicos permanecem nos bancos tenant, nunca duplicados no central.
 
 ## Domínio do laboratório
 
-`app/Domain` contém as regras que operam no banco dedicado do laboratório. Pacientes é a primeira onda concluída. Atendimentos permanece isolado no PR #7 durante a Fase 0.
+`app/Domain` contém as regras que operam no banco dedicado do laboratório. Pacientes é a primeira onda concluída. Atendimentos está implementado no PR #7 sobre a fundação da Fase 0 e permanece isolado do `main` e do cutover do frontend até que os gates e dependências da onda sejam concluídos.
+
+### Atendimentos
+
+O agregado de Atendimentos vive somente no banco tenant e é composto por `atendimentos`, `atendimento_exames`, `atendimento_pagamentos` e `atendimento_audit`. Protocolo, idempotência, campos derivados e auditoria são protegidos no PostgreSQL; criação e edição são transacionais.
+
+O fluxo HTTP clínico é sempre:
+
+```text
+Bearer Supabase
+  -> supabase.auth
+  -> membership/tenant autorizado
+  -> tenant.permission ou autorização específica do PATCH
+  -> domínio no banco físico do laboratório
+```
+
+Não existe autenticação clínica Laravel/Sanctum para esse módulo. Não existe `DELETE /api/atendimentos`; cancelamento é evento de negócio auditado. A disponibilidade do backend não autoriza o cutover do React/Vite: Rotina e Financeiro/Convênios/Caixa ainda precisam cobrir as invariantes dependentes antes da troca do consumidor.
 
 ## Fronteira Platform ↔ Domain
 
