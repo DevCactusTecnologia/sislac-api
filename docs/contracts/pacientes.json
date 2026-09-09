@@ -53,6 +53,28 @@
       "insert": "cadastrar_paciente",
       "update": "editar_paciente",
       "delete": "admin_only"
+    },
+    "policies_observed": {
+      "SELECT": {
+        "name": "pacientes_select",
+        "permission": "visualizar_pacientes",
+        "role": "authenticated"
+      },
+      "INSERT": {
+        "name": "pacientes_insert",
+        "permission": "cadastrar_paciente",
+        "role": "authenticated"
+      },
+      "UPDATE": {
+        "name": "pacientes_update",
+        "permission": "editar_paciente",
+        "role": "authenticated"
+      },
+      "DELETE": {
+        "name": "pacientes_delete",
+        "permission": "admin",
+        "role": "authenticated"
+      }
     }
   },
   "laravel": {
