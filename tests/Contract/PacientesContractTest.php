@@ -9,7 +9,9 @@ it('fixa o contrato do módulo de pacientes no baseline aprovado', function () {
         flags: JSON_THROW_ON_ERROR,
     );
 
-    expect($contract['baseline']['frontend_sha'])->toBe('0760c6123f3062842eaff5f7304b6460c00c058d')
+    expect($contract['version'])->toBe(2)
+        ->and($contract['baseline']['frontend_sha'])->toBe('57cc9be96703a41b207d530088369da1cc23cd94')
+        ->and($contract['baseline']['frontend_source_blob'])->toBe('e05d3c7e231320963d18c26f9c44ef43726f12cb')
         ->and($contract['baseline']['supabase_project_ref'])->toBe('eramenhnqcbyctyiqwlm')
         ->and($contract['supabase']['table'])->toBe('public.pacientes')
         ->and($contract['supabase']['rls_enabled'])->toBeTrue()
