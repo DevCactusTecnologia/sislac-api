@@ -31,7 +31,7 @@ final class PacientesLiveContract
             $contract['supabase']['columns'],
         );
 
-        $actualColumns = array_map(
+        $actualColumns = array_values(array_map(
             static function (object $row): array {
                 $values = get_object_vars($row);
 
@@ -54,7 +54,7 @@ final class PacientesLiveContract
                   AND table_name = 'pacientes'
                 ORDER BY ordinal_position
                 SQL),
-        );
+        ));
 
         $differences = $this->compareColumns($actualColumns, $expectedColumns);
 
