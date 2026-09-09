@@ -12,6 +12,7 @@ use App\Http\Controllers\Pacientes\ListPacientesController;
 use App\Http\Controllers\Pacientes\ShowPacienteController;
 use App\Http\Controllers\Pacientes\UpdatePacienteController;
 use App\Http\Controllers\Rotina\ShowRotinaConfigController;
+use App\Http\Controllers\Rotina\TransitionRotinaExameController;
 use App\Http\Controllers\Rotina\UpdateRotinaConfigController;
 use Illuminate\Support\Facades\Route;
 
@@ -62,3 +63,8 @@ Route::middleware(['supabase.auth', 'tenant'])
 Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:configuracoes_sistema'])
     ->patch('/rotina/config', UpdateRotinaConfigController::class)
     ->name('rotina.config.update');
+
+Route::middleware(['supabase.auth', 'tenant'])
+    ->post('/rotina/exames/{id}/transicao', TransitionRotinaExameController::class)
+    ->whereNumber('id')
+    ->name('rotina.exames.transition');
