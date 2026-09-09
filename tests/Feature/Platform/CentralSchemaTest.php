@@ -12,9 +12,7 @@ it('cria o schema central mínimo da plataforma', function () {
     foreach ([
         'users',
         'tenants',
-        'plans',
         'memberships',
-        'subscriptions',
         'provisioning_runs',
         'platform_audit',
     ] as $table) {

@@ -20,14 +20,6 @@ return new class extends Migration
             $table->timestampsTz();
         });
 
-        Schema::create('plans', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->string('slug')->unique();
-            $table->boolean('active')->default(true)->index();
-            $table->timestampsTz();
-        });
-
         Schema::create('memberships', function (Blueprint $table) {
             $table->id();
             $table->foreignUuid('user_id')->constrained('users')->restrictOnDelete();
@@ -38,18 +30,6 @@ return new class extends Migration
 
             $table->unique(['user_id', 'tenant_id']);
             $table->index(['user_id', 'status']);
-            $table->index(['tenant_id', 'status']);
-        });
-
-        Schema::create('subscriptions', function (Blueprint $table) {
-            $table->id();
-            $table->foreignUuid('tenant_id')->constrained('tenants')->restrictOnDelete();
-            $table->foreignId('plan_id')->constrained('plans')->restrictOnDelete();
-            $table->string('status')->index();
-            $table->timestampTz('starts_at')->nullable();
-            $table->timestampTz('ends_at')->nullable();
-            $table->timestampsTz();
-
             $table->index(['tenant_id', 'status']);
         });
 
@@ -87,9 +67,7 @@ return new class extends Migration
     {
         Schema::dropIfExists('platform_audit');
         Schema::dropIfExists('provisioning_runs');
-        Schema::dropIfExists('subscriptions');
         Schema::dropIfExists('memberships');
-        Schema::dropIfExists('plans');
         Schema::dropIfExists('tenants');
     }
 };

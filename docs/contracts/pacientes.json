@@ -1,10 +1,11 @@
 {
-  "version": 1,
-  "captured_at": "2026-09-07",
+  "version": 2,
+  "captured_at": "2026-09-08",
   "baseline": {
     "frontend_repository": "DevCactusTecnologia/sislacprivado",
-    "frontend_sha": "0760c6123f3062842eaff5f7304b6460c00c058d",
+    "frontend_sha": "57cc9be96703a41b207d530088369da1cc23cd94",
     "frontend_source": "src/data/pacienteStore.ts",
+    "frontend_source_blob": "e05d3c7e231320963d18c26f9c44ef43726f12cb",
     "supabase_project_ref": "eramenhnqcbyctyiqwlm",
     "postgres_major": 17
   },
@@ -52,6 +53,28 @@
       "insert": "cadastrar_paciente",
       "update": "editar_paciente",
       "delete": "admin_only"
+    },
+    "policies_observed": {
+      "SELECT": {
+        "name": "pacientes_select",
+        "permission": "visualizar_pacientes",
+        "role": "authenticated"
+      },
+      "INSERT": {
+        "name": "pacientes_insert",
+        "permission": "cadastrar_paciente",
+        "role": "authenticated"
+      },
+      "UPDATE": {
+        "name": "pacientes_update",
+        "permission": "editar_paciente",
+        "role": "authenticated"
+      },
+      "DELETE": {
+        "name": "pacientes_delete",
+        "permission": "admin",
+        "role": "authenticated"
+      }
     }
   },
   "laravel": {

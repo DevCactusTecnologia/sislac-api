@@ -83,7 +83,7 @@ jobs:
           cp .env.example .env
           php artisan key:generate --ansi
 
-      - name: Contrato Supabase ↔ Laravel
+      - name: Integridade do manifesto Supabase
         run: php scripts/check-supabase-contract.php
 
       - name: Pint — formatação
