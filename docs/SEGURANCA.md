@@ -13,6 +13,7 @@ Estes controles valem para todo o backend e devem ser verificáveis por teste, g
 
 - O frontend clínico continua autenticando no **Supabase Auth** enquanto o cutover de identidade não for uma fase explícita.
 - A API Laravel recebe Bearer token e valida a identidade server-side no Supabase Auth (`/auth/v1/user`) usando apenas URL pública e publishable key do projeto.
+- A API clínica não usa pipeline stateful do Sanctum; a rota `/sanctum/csrf-cookie` fica explicitamente desativada enquanto não houver consumidor aprovado.
 - Token ausente ou rejeitado falha com 401; indisponibilidade do Auth falha fechada com 503.
 - Tokens e respostas internas do upstream não aparecem em payloads ou logs de erro.
 - Um UUID validado no Supabase deve existir previamente em `central.users`; a requisição não cria usuário, membership ou permissão automaticamente.
