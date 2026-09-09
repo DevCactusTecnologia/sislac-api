@@ -124,7 +124,9 @@ it('recalcula status e totais quando exames mudam', function () {
         ->and((float) $atendimento?->desconto_total)->toBe(20.0)
         ->and((float) $atendimento?->acrescimo_total)->toBe(0.0);
 
-    DB::table('atendimento_exames')->where('atendimento_id', $id)->update(['status' => 'finalizado']);
+    foreach (['coletado', 'em_bancada', 'analisado', 'finalizado'] as $status) {
+        DB::table('atendimento_exames')->where('atendimento_id', $id)->update(['status' => $status]);
+    }
 
     expect(DB::table('atendimentos')->where('id', $id)->value('status_atendimento'))
         ->toBe('Resultado Liberado');
