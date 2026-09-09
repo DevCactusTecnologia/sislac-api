@@ -126,8 +126,8 @@ final class PacientesLiveContract
     }
 
     /**
-     * @param list<array{name:string,type:string,nullable:bool}> $actual
-     * @param list<array{name:string,type:string,nullable:bool}> $expected
+     * @param  list<array{name:string,type:string,nullable:bool}>  $actual
+     * @param  list<array{name:string,type:string,nullable:bool}>  $expected
      * @return list<string>
      */
     public function compareColumns(array $actual, array $expected): array
@@ -145,6 +145,7 @@ final class PacientesLiveContract
 
             if ($observed === null) {
                 $differences[] = "coluna ausente: {$name}";
+
                 continue;
             }
 
