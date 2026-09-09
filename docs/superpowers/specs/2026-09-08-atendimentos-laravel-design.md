@@ -11,6 +11,7 @@ Migrar o agregado de Atendimentos para o backend Laravel definitivo sem regress�
 - Cada laboratório usa PostgreSQL físico próprio via `stancl/tenancy`.
 - O banco central não recebe domínio clínico.
 - Nenhuma escrita será feita no Supabase nesta onda.
+- Durante a transição, a identidade clínica continua no Supabase Auth; o Laravel valida o Bearer token pelo middleware `supabase.auth` antes de tenancy e autorização.
 
 ## Decisão arquitetural
 
@@ -63,6 +64,8 @@ A recomputação baseia-se em `atendimento_exames` e `atendimento_pagamentos`, i
 
 Não existe `DELETE /api/atendimentos`. Cancelamento é evento de negócio.
 
+Todas as rotas clínicas acima usam `supabase.auth` como primeiro gate de identidade. Sessão Laravel/Sanctum não autentica usuários clínicos; a sessão Laravel permanece exclusiva do Super Admin web.
+
 ### Listagem
 
 Cursor composto `(data, id)`, ordenação `data DESC, id DESC`, página entre 10 e 200 e filtros:
@@ -114,13 +117,21 @@ Nesta onda, alterações que dependam de faturas fechadas, caixa, estorno financ
 
 ## Autorização
 
+A cadeia é explícita e ordenada:
+
+1. `supabase.auth` valida o Bearer e correlaciona o UUID com `central.users` já provisionado;
+2. `tenant` seleciona somente um laboratório para o qual exista membership ativa;
+3. `tenant.permission` ou a autorização específica do `PATCH` valida a ação solicitada.
+
+Permissões:
+
 - leitura: `visualizar_atendimentos`;
 - criação: `criar_atendimento`;
 - edição: `editar_atendimento`;
 - cancelamento: `cancelar_atendimento`;
 - operação exclusivamente financeira: `registrar_pagamento`.
 
-Autorização é server-side via middleware existente `tenant.permission` e validação adicional quando o tipo de operação muda dentro do PATCH.
+`X-Tenant` não autoriza por si só. Token Supabase válido não cria usuário, membership ou permissão automaticamente.
 
 ## Auditoria
 
@@ -165,6 +176,7 @@ No mesmo SHA final:
 - rollback integral testado;
 - filtros, cursor, datas e KPIs testados;
 - edição preserva estado clínico;
+- autenticação clínica aceita Bearer Supabase e rejeita sessão Laravel isolada;
 - cancelamento e permissões testados;
 - auditoria testada;
 - provisionamento de novo tenant inclui as novas migrations;
