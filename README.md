@@ -27,13 +27,28 @@ Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - banco central e database-per-lab: concluídos;
 - autorização central por membership: concluída;
 - autenticação clínica transitória por Supabase Auth: implementada sem auto-provisionamento;
-- provisionamento idempotente de novo laboratório: concluído e testado;
+- provisionamento idempotente de novo laboratório: concluído e testado, incluindo as migrations/invariantes de Atendimentos na branch da onda;
 - conexão `supabase_source` de leitura/concordância: implementada, com sessão read-only e credencial dedicada recomendada;
 - Super Admin Laravel: fundação implementada e testada;
 - Pacientes: primeira onda de domínio já migrada;
+- Atendimentos: backend Laravel implementado no PR #7 sobre a fundação da Fase 0, com autenticação clínica Bearer/Supabase; o frontend ainda não faz cutover para essas rotas;
 - fila persistente/jobs: removidos enquanto não houver consumidor;
-- `plans`/`subscriptions`: removidos da baseline de novos bancos; instalações existentes são apenas auditadas antes de qualquer cleanup físico;
-- Atendimentos: permanece no PR #7 e não entra em `main` antes da conclusão/revisão desta Fase 0.
+- `plans`/`subscriptions`: removidos da baseline de novos bancos; instalações existentes são apenas auditadas antes de qualquer cleanup físico.
+
+### API de Atendimentos
+
+```text
+GET   /api/atendimentos
+GET   /api/atendimentos/kpis
+GET   /api/atendimentos/{id}
+GET   /api/atendimentos/protocolo/{protocolo}
+POST  /api/atendimentos
+PATCH /api/atendimentos/{id}
+```
+
+Todas as rotas clínicas de Atendimentos exigem Bearer validado pelo middleware `supabase.auth`, seleção de tenant autorizada e as permissões Laravel correspondentes. As permissões específicas são `visualizar_atendimentos`, `criar_atendimento`, `editar_atendimento`, `cancelar_atendimento` e `registrar_pagamento`. O `PATCH` exige as permissões de acordo com a intenção real do payload. Não existe `DELETE /api/atendimentos`; cancelamento preserva e audita o atendimento.
+
+A implementação do backend não autoriza por si só o cutover do frontend. Rotina e Financeiro/Convênios/Caixa ainda precisam cobrir as invariantes dependentes antes da troca do consumidor.
 
 ## Desenvolvimento
 
