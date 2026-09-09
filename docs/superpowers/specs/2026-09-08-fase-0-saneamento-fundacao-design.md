@@ -85,27 +85,32 @@ O primeiro adaptador live será Pacientes porque o módulo já existe no Laravel
 
 O frontend autentica em Supabase Auth, enquanto o Laravel possui `users.password`, `Auth::attempt()` e Sanctum stateful. Não existe ainda uma ponte completa entre as duas identidades.
 
-Dois sistemas de senha independentes não serão aceitos como arquitetura de transição.
+Dois sistemas de senha independentes para usuários clínicos não serão aceitos como arquitetura de transição.
 
 ### Abordagens consideradas
 
-1. **Manter Supabase Auth e Laravel Auth independentes.** Rejeitada por duplicar identidade e gerar divergência operacional.
+1. **Manter Supabase Auth e Laravel Auth independentes para usuários clínicos.** Rejeitada por duplicar identidade e gerar divergência operacional.
 2. **Migrar senhas imediatamente para Laravel.** Rejeitada por acoplar a Fase 0 a detalhes internos de hash/recuperação e aumentar o risco do cutover.
-3. **Supabase Auth como fonte de identidade durante a transição, com ponte server-side para o usuário central Laravel.** **Selecionada.**
+3. **Supabase Auth como fonte de identidade dos usuários clínicos durante a transição, com ponte server-side para o usuário central Laravel.** **Selecionada.**
 
 ### Desenho selecionado
 
 Enquanto o frontend ainda depender de Supabase:
 
-- Supabase Auth permanece a fonte de autenticação do usuário existente;
-- o UUID do usuário autenticado (`sub`) é a chave de correlação com `central.users.id`;
-- o Laravel não cria uma segunda senha ativa para o mesmo usuário como requisito de acesso durante a transição;
-- a ponte valida a identidade server-side e então aplica `memberships`/permissões Laravel;
-- nenhum dado de autorização será confiado a `user_metadata` editável pelo usuário;
-- o mecanismo exato de verificação do token deve seguir a configuração/documentação atual do projeto Supabase, preferindo validação local com chave pública/JWKS quando suportada; não será inventado algoritmo ou segredo;
-- o login Laravel por senha/Sanctum só se torna fonte definitiva em uma fase explícita de cutover de identidade, com plano de migração/recuperação de senha próprio.
+- usuários clínicos autenticam somente no Supabase Auth;
+- requests clínicos ao Laravel enviam `Authorization: Bearer <access_token>`;
+- um middleware/guard Laravel mínimo valida o token diretamente no Supabase Auth via `GET /auth/v1/user`, usando somente a URL do projeto e a chave pública/publishable apropriada; não usa `service_role`;
+- a Fase 0 não adiciona biblioteca JWT/JWKS nem implementa criptografia própria: a validação remota é deliberadamente temporária, simples e compatível tanto com projetos em chave simétrica quanto assimétrica;
+- timeout de rede deve ser curto, erro de Auth deve falhar fechado e não haverá retry automático de autenticação;
+- o UUID retornado pelo Supabase (`user.id`, correspondente ao `sub`) é a chave de correlação com `central.users.id`;
+- o Laravel resolve apenas usuário central já provisionado; **não cria usuário, membership, papel ou permissão automaticamente a partir de um token válido**;
+- usuário válido no Supabase mas ausente/inativo no plano central recebe negação sem inicializar tenant;
+- `memberships`/permissões Laravel continuam sendo a fonte de autorização server-side;
+- `user_metadata` editável pelo usuário nunca é fonte de autorização;
+- o login API por senha/Sanctum deixa de ser requisito para usuários clínicos durante a transição e não será mantido como caminho paralelo de acesso;
+- o painel Super Admin Laravel é um domínio administrativo separado e pode continuar usando autenticação local Laravel, pois não representa a identidade clínica migrada do Supabase.
 
-A Fase 0 implementará apenas a ponte mínima necessária e os testes de identidade; não fará o cutover final de autenticação do frontend.
+O cutover final de autenticação dos usuários clínicos para Laravel será uma fase própria. Nessa fase serão definidos recuperação de senha, criação/ativação de credenciais Laravel e retirada definitiva da dependência do Supabase Auth.
 
 ## 6. `supabase_source` read-only de verdade
 
@@ -162,8 +167,9 @@ Arquivos/camadas candidatas, sujeitas a confirmação por TDD:
 - novo verificador live focado em contratos migrados;
 - `tests/Contract/*`;
 - `tests/Feature/Platform/SupabaseSourceTest.php`;
-- autenticação/middleware mínimo para ponte de identidade;
-- `.env.example` e `config/database.php` apenas onde necessário;
+- middleware/serviço mínimo de identidade Supabase para requests clínicos;
+- rotas/API auth atuais somente na medida necessária para eliminar o caminho clínico paralelo por senha;
+- `.env.example` e configurações de serviços/database apenas onde necessário;
 - `database/migrations/0001_01_01_000002_create_jobs_table.php`;
 - migration central de fundação somente se a remoção segura de `plans/subscriptions` for comprovada;
 - documentação de arquitetura/segurança/deploy;
@@ -181,22 +187,24 @@ A Fase 0 não irá:
 - criar DTOs/repositories/CQRS preventivos;
 - alterar o modelo database-per-lab;
 - fazer cutover final de autenticação;
+- auto-provisionar usuário, tenant ou permissões a partir do Supabase;
 - criar migrations corretivas sem primeiro verificar se a baseline pode ser corrigida de forma limpa.
 
 ## 11. Estratégia de implementação
 
 Após aprovação desta especificação:
 
-1. escrever testes RED para semântica correta dos gates e drift de baseline;
+1. escrever testes RED para semântica correta dos gates, drift de baseline e identidade de transição;
 2. atualizar manifesto/baselines para a `main` atual observada e separar integridade de conformidade live;
 3. implementar prova live de Pacientes usando `supabase_source` read-only;
-4. implementar a ponte mínima de identidade Supabase → `central.users`/memberships com testes de rejeição e autorização;
-5. endurecer contrato read-only da conexão;
-6. remover infraestrutura sem consumidor após confirmação de ausência de dependências;
-7. atualizar documentação e guards;
-8. executar Composer Validate/Audit, Pint, Larastan nível 8, Pest e guards no mesmo SHA;
-9. executar `contract:live` em ambiente confiável;
-10. revisar diff completo e somente então abrir PR da Fase 0 para `main`.
+4. implementar o verificador remoto mínimo de identidade Supabase e resolução do usuário central, sem auto-provisionamento;
+5. eliminar o caminho clínico paralelo por senha/Sanctum sem afetar o Super Admin Laravel;
+6. endurecer contrato read-only da conexão;
+7. remover infraestrutura sem consumidor após confirmação de ausência de dependências;
+8. atualizar documentação e guards;
+9. executar Composer Validate/Audit, Pint, Larastan nível 8, Pest e guards no mesmo SHA;
+10. executar `contract:live` em ambiente confiável;
+11. revisar diff completo e somente então abrir PR da Fase 0 para `main`.
 
 ## 12. Critérios de aceite
 
@@ -205,7 +213,10 @@ A Fase 0 só estará concluída quando houver evidência no mesmo SHA de que:
 - CI não chama mais uma verificação estática de "conformidade Supabase ↔ Laravel";
 - manifesto offline está atualizado e determinístico;
 - Pacientes passa em conformidade live contra o Supabase real sem escrita;
-- autenticação de transição possui uma única fonte de identidade (Supabase Auth) e autorização Laravel continua server-side;
+- usuários clínicos têm uma única fonte de autenticação durante a transição: Supabase Auth;
+- um token válido não cria privilégios automaticamente no Laravel;
+- autorização clínica permanece exclusivamente server-side no plano central antes de inicializar tenant;
+- o Super Admin Laravel continua funcionando de forma independente;
 - `supabase_source` usa defesa em profundidade read-only;
 - queue/jobs não permanecem sem consumidor;
 - `plans/subscriptions` não permanecem preventivamente sem consumidor, salvo dependência executável comprovada;
