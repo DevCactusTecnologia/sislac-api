@@ -7,6 +7,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -51,8 +52,18 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
+    Http::preventStrayRequests();
+    config()->set('services.supabase.url', 'https://example.supabase.co');
+    config()->set('services.supabase.publishable_key', 'test-publishable-key');
+    Http::fake([
+        'https://example.supabase.co/auth/v1/user' => Http::response([
+            'id' => $this->atendimentoUpdateUser->id,
+            'email' => $this->atendimentoUpdateUser->email,
+        ], 200),
+    ]);
+
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->actingAs($this->atendimentoUpdateUser, 'web');
+    $this->withToken('valid-atendimentos-token');
 });
 
 afterEach(function () {
