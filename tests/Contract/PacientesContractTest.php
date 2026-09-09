@@ -16,6 +16,28 @@ it('fixa o contrato do módulo de pacientes no baseline aprovado', function () {
         ->and($contract['supabase']['table'])->toBe('public.pacientes')
         ->and($contract['supabase']['rls_enabled'])->toBeTrue()
         ->and($contract['supabase']['columns'])->toHaveCount(24)
+        ->and($contract['supabase']['policies_observed'])->toBe([
+            'SELECT' => [
+                'name' => 'pacientes_select',
+                'permission' => 'visualizar_pacientes',
+                'role' => 'authenticated',
+            ],
+            'INSERT' => [
+                'name' => 'pacientes_insert',
+                'permission' => 'cadastrar_paciente',
+                'role' => 'authenticated',
+            ],
+            'UPDATE' => [
+                'name' => 'pacientes_update',
+                'permission' => 'editar_paciente',
+                'role' => 'authenticated',
+            ],
+            'DELETE' => [
+                'name' => 'pacientes_delete',
+                'permission' => 'admin',
+                'role' => 'authenticated',
+            ],
+        ])
         ->and($contract['laravel']['pagination']['page_size'])->toBe(50)
         ->and($contract['laravel']['pagination']['offset'])->toBeFalse()
         ->and($contract['laravel']['permissions'])->toBe([
