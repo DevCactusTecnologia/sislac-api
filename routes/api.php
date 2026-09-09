@@ -31,7 +31,7 @@ Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:editar_paciente
     ->whereNumber('id')
     ->name('pacientes.update');
 
-Route::middleware(['auth:sanctum', 'tenant', 'tenant.permission:visualizar_atendimentos'])
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_atendimentos'])
     ->prefix('atendimentos')
     ->group(function () {
         Route::get('/', ListAtendimentosController::class)->name('atendimentos.index');
@@ -44,11 +44,11 @@ Route::middleware(['auth:sanctum', 'tenant', 'tenant.permission:visualizar_atend
             ->name('atendimentos.show');
     });
 
-Route::middleware(['auth:sanctum', 'tenant', 'tenant.permission:criar_atendimento'])
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:criar_atendimento'])
     ->post('/atendimentos', StoreAtendimentoController::class)
     ->name('atendimentos.store');
 
-Route::middleware(['auth:sanctum', 'tenant'])
+Route::middleware(['supabase.auth', 'tenant'])
     ->patch('/atendimentos/{id}', UpdateAtendimentoController::class)
     ->whereNumber('id')
     ->name('atendimentos.update');
