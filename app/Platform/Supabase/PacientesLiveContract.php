@@ -292,7 +292,7 @@ final class PacientesLiveContract
     private function parseRoles(mixed $roles): array
     {
         if (is_array($roles)) {
-            return array_map('strval', $roles);
+            return array_values(array_map('strval', $roles));
         }
 
         if (! is_string($roles)) {
@@ -305,10 +305,10 @@ final class PacientesLiveContract
             return [];
         }
 
-        return array_values(array_map(
+        return array_map(
             static fn (string $role): string => trim($role, " \t\n\r\0\x0B\""),
             explode(',', $roles),
-        ));
+        );
     }
 
     private function assertReadOnly(ConnectionInterface $connection): void
