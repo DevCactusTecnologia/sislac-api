@@ -28,3 +28,56 @@ it('detecta tipo e nullability divergentes', function () {
         ->toContain('tipo divergente em cpf: varchar != text')
         ->toContain('nullability divergente em cpf');
 });
+
+it('detecta default divergente quando o contrato declara o default', function () {
+    $checker = new PacientesLiveContract;
+
+    $differences = $checker->compareColumns(
+        [[
+            'name' => 'status',
+            'type' => 'text',
+            'nullable' => false,
+            'default' => "'Inativo'::text",
+        ]],
+        [[
+            'name' => 'status',
+            'type' => 'text',
+            'nullable' => false,
+            'default' => 'Ativo',
+        ]],
+    );
+
+    expect($differences)->toContain('default divergente em status: Inativo != Ativo');
+});
+
+it('detecta policy adicional no mesmo comando', function () {
+    $checker = new PacientesLiveContract;
+
+    $differences = $checker->comparePolicies(
+        [
+            [
+                'name' => 'pacientes_select',
+                'command' => 'SELECT',
+                'permissive' => 'PERMISSIVE',
+                'roles' => ['authenticated'],
+                'expression' => 'visualizar_pacientes',
+            ],
+            [
+                'name' => 'pacientes_select_extra',
+                'command' => 'SELECT',
+                'permissive' => 'PERMISSIVE',
+                'roles' => ['authenticated'],
+                'expression' => 'true',
+            ],
+        ],
+        [
+            'SELECT' => [
+                'name' => 'pacientes_select',
+                'permission' => 'visualizar_pacientes',
+                'role' => 'authenticated',
+            ],
+        ],
+    );
+
+    expect($differences)->toContain('policy SELECT: quantidade divergente (2 != 1)');
+});
