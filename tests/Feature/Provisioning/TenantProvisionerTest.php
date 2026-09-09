@@ -80,7 +80,7 @@ it('ativa o tenant somente depois de criar banco migrar e executar smoke check',
         ->first();
 
     expect($run?->status)->toBe('succeeded')
-        ->and($run?->schema_version)->toBe('2026_09_08_000300_add_atendimento_invariants')
+        ->and($run?->schema_version)->toBe('2026_09_09_000400_add_rotina_fluxo')
         ->and($run?->finished_at)->not->toBeNull();
 
     expect(DB::connection('central')->table('platform_audit')
@@ -96,11 +96,15 @@ it('ativa o tenant somente depois de criar banco migrar e executar smoke check',
         'atendimento_exames',
         'atendimento_pagamentos',
         'atendimento_audit',
+        'lab_config',
     ] as $table) {
         $statement = $tenantDb->prepare('SELECT to_regclass(?)');
         $statement->execute(['public.'.$table]);
         expect($statement->fetchColumn())->toBe($table);
     }
+
+    expect($tenantDb->query('SELECT rotina_fluxo_modo FROM lab_config WHERE singleton_key = 1')?->fetchColumn())
+        ->toBe('completo');
 
     $created = $tenantDb->query(<<<'SQL'
         INSERT INTO atendimentos (paciente_nome, paciente_cpf)
