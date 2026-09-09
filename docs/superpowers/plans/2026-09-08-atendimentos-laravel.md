@@ -6,13 +6,14 @@
 
 **Architecture:** O domínio vive exclusivamente no PostgreSQL físico do laboratório selecionado pelo middleware de tenancy. `atendimentos`, `atendimento_exames` e `atendimento_pagamentos` formam um único agregado transacional; protocolo e campos derivados são invariantes de banco, enquanto HTTP usa controllers/requests/queries/actions pequenos e explícitos. Nenhum consumidor escreve no Supabase.
 
-**Tech Stack:** PHP 8.4, Laravel 13, PostgreSQL 17, stancl/tenancy, Sanctum, Pest, Larastan nível 8.
+**Tech Stack:** PHP 8.4, Laravel 13, PostgreSQL 17, stancl/tenancy, Supabase Auth via Bearer, Pest, Larastan nível 8.
 
 **Spec:** `docs/superpowers/specs/2026-09-08-atendimentos-laravel-design.md`
 
 ## Global Constraints
 
-- Laravel é o backend definitivo; Supabase é somente baseline/source durante a transição.
+- Laravel é o backend definitivo; Supabase é baseline/source e origem de identidade clínica durante a transição.
+- A API clínica usa `supabase.auth`/Bearer antes de tenancy e autorização; sessão Laravel permanece exclusiva do Super Admin web.
 - Um PostgreSQL físico por laboratório; nenhum domínio clínico no banco central.
 - Nenhuma alteração no frontend React/Vite nesta onda.
 - Nenhuma escrita ou DDL no Supabase nesta onda.
@@ -126,7 +127,7 @@ Expected: FAIL with missing routes/classes.
 
 - [ ] **Step 3: Implement minimal read path**
 
-Use query builder/Eloquent with explicit selected columns, composite cursor predicate `(data,id) < (?,?)`, indexed filters, and no N+1 on detail. Reuse existing `tenant.permission:visualizar_atendimentos` middleware.
+Use query builder/Eloquent with explicit selected columns, composite cursor predicate `(data,id) < (?,?)`, indexed filters, and no N+1 on detail. Use `supabase.auth` first and reuse existing `tenant.permission:visualizar_atendimentos` after tenant selection.
 
 - [ ] **Step 4: Run GREEN**
 
@@ -231,7 +232,7 @@ Expected: fail before tenant migrations are complete; after previous tasks it ma
 
 - [ ] **Step 3: Final documentation/guard cleanup**
 
-Document exact routes, permissions, aggregate boundary and cutover gate. Do not add deploy/runtime dependencies.
+Document exact routes, permissões, `supabase.auth`/Bearer, aggregate boundary and cutover gate. Do not add deploy/runtime dependencies.
 
 - [ ] **Step 4: Run complete verification**
 
@@ -256,6 +257,6 @@ Expected: all green on the same SHA.
 
 Confirm no frontend/Supabase/runtime-infra drift. Commit message: `docs: fecha onda Atendimentos Laravel`.
 
-- [ ] **Step 6: Open draft PR**
+- [ ] **Step 6: Maintain draft PR on the current foundation**
 
-Open PR from `feat/atendimentos-laravel` to `main`, include exact final SHA, CI run and explicit cutover block. Do not merge without user approval.
+Enquanto a Fase 0 não estiver em `main`, o PR `feat/atendimentos-laravel` deve permanecer baseado em `chore/fase-0-foundation-hardening`, com SHA/CI exatos e bloqueio de cutover explícito. Depois que a Fase 0 for integrada em `main`, retargetar o PR #7 para `main`, executar novamente todos os gates no novo contexto e não mesclar sem aprovação explícita do usuário.
