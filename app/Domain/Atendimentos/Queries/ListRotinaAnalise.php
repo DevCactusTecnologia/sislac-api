@@ -4,10 +4,11 @@ namespace App\Domain\Atendimentos\Queries;
 
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use stdClass;
 
 final class ListRotinaAnalise
 {
-    /** @return array{enabled:bool,data:Collection<int, object>} */
+    /** @return array{enabled:bool,data:Collection<int, stdClass>} */
     public function handle(): array
     {
         if ($this->mode() !== 'completo') {
