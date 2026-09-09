@@ -86,8 +86,11 @@ jobs:
       - name: Integridade do manifesto Supabase
         run: php scripts/check-supabase-contract.php
 
-      - name: Pint — formatação
-        run: vendor/bin/pint --test
+      - name: Pint — diagnóstico do diff
+        run: |
+          vendor/bin/pint app/Platform/Supabase/PacientesLiveContract.php
+          git diff -- app/Platform/Supabase/PacientesLiveContract.php
+          exit 1
 
       - name: Larastan — análise estática nível 8
         run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
