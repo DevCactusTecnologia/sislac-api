@@ -28,6 +28,13 @@ if grep -Eq 'REDIS_|REVERB_|HORIZON_' .env.example; then
   fail "Variáveis de infraestrutura sem consumidor encontradas no .env.example."
 fi
 
+if [ -e database/migrations/0001_01_01_000002_create_jobs_table.php ]; then
+  fail "Migration de fila persistente reapareceu sem consumidor runtime."
+fi
+
+grep -q '^QUEUE_CONNECTION=sync$' .env.example || \
+  fail "QUEUE_CONNECTION deve permanecer sync enquanto não houver consumidor runtime."
+
 for orphan in \
   TENANT_DB_NAME_PREFIX \
   WHATSAPP_META_ \
