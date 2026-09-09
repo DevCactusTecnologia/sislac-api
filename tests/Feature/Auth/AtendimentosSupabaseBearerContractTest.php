@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Http;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
+    Http::preventStrayRequests();
+
     config()->set('services.supabase.url', 'https://example.supabase.co');
     config()->set('services.supabase.publishable_key', 'test-publishable-key');
 });
