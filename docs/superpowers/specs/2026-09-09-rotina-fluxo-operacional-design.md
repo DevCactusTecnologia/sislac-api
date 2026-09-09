@@ -91,6 +91,31 @@ Não portar agora:
 
 O boolean legado continuará sendo responsabilidade do frontend atual até o cutover correspondente.
 
+## Mudança de modo com exames em andamento
+
+Alterar `rotina_fluxo_modo` deve ser uma operação transacional. Não é aceitável apenas trocar a configuração e deixar ocorrências em estados pertencentes a etapas que acabaram de ser desativadas.
+
+Ao **encurtar** o fluxo, somente exames `INTERNO` não terminais são normalizados:
+
+### destino `coleta_resultado`
+
+- `pendente` permanece `pendente`, porque a coleta continua ativa;
+- `coletado` e `em_bancada` são promovidos para `analisado`;
+- `data_analise` recebe horário server-side quando ausente;
+- `analista` recebe `__SEM_REGISTRO__` quando não existir registro real.
+
+### destino `apenas_resultado`
+
+- `pendente`, `coletado` e `em_bancada` são promovidos para `analisado`;
+- `data_coleta` e `data_analise` recebem horário server-side quando ausentes;
+- `coletor` e `analista` recebem `__SEM_REGISTRO__` somente quando não existir registro real.
+
+Ao **alongar** o fluxo, não existe regressão automática: exames já `analisado`, `digitado`, `finalizado` ou `cancelado` permanecem como estão.
+
+Exames `TERCEIRIZADO`, `finalizado` e `cancelado` nunca são reclassificados pela troca de modo.
+
+Configuração e normalização precisam confirmar ou fazer rollback juntas. A recomputação de `status_atendimento` e a auditoria já existentes devem refletir as mudanças sem segundo cálculo em PHP.
+
 ## Máquina de estados no PostgreSQL
 
 O banco tenant deve proteger as seguintes invariantes:
@@ -138,7 +163,7 @@ Recoleta é uma intenção de negócio, não uma edição livre de status.
 Cancelamento usa a permissão já existente `cancelar_atendimento` e deve:
 
 - alterar o exame para `cancelado`;
-- exigir motivo não vazio quando a ação operacional atual exigir justificativa;
+- exigir `motivo` não vazio;
 - preservar histórico de coleta/análise existente; cancelar não deve apagar automaticamente timestamps clínicos anteriores;
 - deixar a recomputação do status do atendimento a cargo das invariantes já existentes no agregado Atendimentos.
 
@@ -161,7 +186,7 @@ Quando existir responsável real, a API recebe apenas a intenção/contexto nece
 - `GET /api/rotina/config`
 - `PATCH /api/rotina/config`
 
-`PATCH` aceita somente `rotina_fluxo_modo` nesta onda.
+`PATCH` aceita somente `rotina_fluxo_modo` nesta onda e executa, na mesma transação, a normalização de exames internos em andamento descrita acima.
 
 ### Filas
 
@@ -183,7 +208,7 @@ Payload canônico:
 ```json
 {
   "acao": "coletar | recoletar | iniciar_analise | finalizar_analise | cancelar",
-  "motivo": "opcional conforme a ação"
+  "motivo": "obrigatório somente para cancelar"
 }
 ```
 
@@ -214,7 +239,7 @@ Permissões do vocabulário já existente:
 - iniciar/finalizar análise: `analisar_amostra`;
 - cancelar: `cancelar_atendimento`;
 - ler configuração: usuário autenticado com acesso ao tenant;
-- alterar configuração: `configuracoes_sistema`.
+- alterar configuração e normalizar o fluxo: `configuracoes_sistema`.
 
 `TenantPermission` receberá casos para permissões que já existem no produto, mas ainda não estavam necessárias no backend Laravel. Isso não cria um novo vocabulário de autorização.
 
@@ -231,7 +256,8 @@ A auditoria deve permitir distinguir, pelo estado antigo/novo e dados persistido
 - início de análise;
 - finalização de análise;
 - cancelamento;
-- short-circuit de modo encurtado.
+- short-circuit de modo encurtado;
+- normalização decorrente de mudança de modo.
 
 Não duplicar eventos apenas para produzir rótulos cosméticos.
 
@@ -253,11 +279,14 @@ Não criar segundo cálculo de `status_atendimento` em PHP.
 
 Cada transição deve ocorrer em uma transação curta e bloquear a ocorrência alvo (`SELECT ... FOR UPDATE` ou mecanismo equivalente) antes de decidir a mudança.
 
+A troca de modo também deve serializar a configuração do tenant antes de normalizar exames, evitando duas alterações de fluxo concorrentes.
+
 Duas requisições concorrentes não podem:
 
 - avançar o mesmo exame duas vezes de forma contraditória;
 - sobrescrever timestamps posteriores com valores antigos;
-- permitir salto que seria inválido se avaliado contra o estado realmente persistido.
+- permitir salto que seria inválido se avaliado contra o estado realmente persistido;
+- aplicar normalização baseada em modo já substituído por outra requisição.
 
 Não adicionar Redis, filas, locks distribuídos ou infraestrutura externa.
 
@@ -278,7 +307,11 @@ Mensagens devem ser específicas e estáveis o suficiente para a UI mostrar erro
 - default `completo` em novo tenant;
 - aceita somente os três modos;
 - alteração exige `configuracoes_sistema`;
-- configuração isolada por tenant.
+- configuração isolada por tenant;
+- `completo → coleta_resultado` promove internos `coletado/em_bancada`, preserva `pendente` e não toca terceirizados/terminais;
+- `* → apenas_resultado` promove internos `pendente/coletado/em_bancada`, preenche apenas dados técnicos ausentes e não toca terceirizados/terminais;
+- alongar o fluxo não regride estados;
+- falha na normalização faz rollback também da configuração.
 
 ### Modo `completo`
 
@@ -314,6 +347,7 @@ Mensagens devem ser específicas e estáveis o suficiente para a UI mostrar erro
 
 - recoleta respeita o modo;
 - não gera nova cobrança;
+- cancelar sem motivo retorna `422`;
 - cancelamento preserva timestamps anteriores;
 - exame finalizado não é reaberto sem regra de retificação futura.
 
@@ -327,7 +361,8 @@ Mensagens devem ser específicas e estáveis o suficiente para a UI mostrar erro
 ### Concorrência
 
 - duas coletas concorrentes na mesma ocorrência produzem um único estado coerente;
-- avanço concorrente conflitante falha de forma determinística e não corrompe o histórico.
+- avanço concorrente conflitante falha de forma determinística e não corrompe o histórico;
+- mudanças de modo concorrentes não deixam configuração e estados incompatíveis.
 
 ## Fora do escopo
 
@@ -362,6 +397,7 @@ No mesmo SHA candidato:
 
 - PostgreSQL 17 executa todas as migrations tenant;
 - três modos testados;
+- troca de modo não deixa exames internos sem fila;
 - transições inválidas protegidas no banco e no HTTP;
 - timestamps são server-side;
 - permissões separadas testadas;
