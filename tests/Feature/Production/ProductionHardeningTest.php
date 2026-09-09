@@ -23,6 +23,10 @@ it('não confia em X-Forwarded-Proto vindo diretamente de IP público', function
         ->assertSeeText('http');
 });
 
+it('não expõe a rota csrf do Sanctum sem consumidor clínico', function () {
+    $this->get('/sanctum/csrf-cookie')->assertNotFound();
+});
+
 it('mantém o contrato de produção para bearer clínico e otimização', function () {
     $bootstrap = (string) file_get_contents(base_path('bootstrap/app.php'));
     $env = (string) file_get_contents(base_path('.env.example'));
@@ -30,6 +34,7 @@ it('mantém o contrato de produção para bearer clínico e otimização', funct
     $cors = (string) file_get_contents(base_path('config/cors.php'));
     $routes = (string) file_get_contents(base_path('routes/api.php'));
     $phpunit = (string) file_get_contents(base_path('phpunit.xml'));
+    $sanctum = (string) file_get_contents(base_path('config/sanctum.php'));
 
     expect($bootstrap)->toContain('trustProxies')
         ->and($bootstrap)->not->toContain("trustProxies(at: '*'")
@@ -39,6 +44,7 @@ it('mantém o contrato de produção para bearer clínico e otimização', funct
         ->and($cors)->not->toContain('sanctum/csrf-cookie')
         ->and($routes)->not->toContain('auth:sanctum')
         ->and($phpunit)->not->toContain('SANCTUM_STATEFUL_DOMAINS')
+        ->and($sanctum)->toContain("'routes' => false")
         ->and($deploy)->toContain('SUPABASE_URL=')
         ->and($deploy)->toContain('SUPABASE_PUBLISHABLE_KEY=')
         ->and($deploy)->toContain('proxy_set_header X-Forwarded-For $remote_addr;')
