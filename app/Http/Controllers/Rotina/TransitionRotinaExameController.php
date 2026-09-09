@@ -10,6 +10,7 @@ use App\Platform\Authorization\TenantPermission;
 use App\Platform\Models\User;
 use DomainException;
 use Illuminate\Http\JsonResponse;
+use LogicException;
 
 final class TransitionRotinaExameController extends Controller
 {
@@ -32,6 +33,7 @@ final class TransitionRotinaExameController extends Controller
             'coletar', 'recoletar' => TenantPermission::RegisterCollection,
             'iniciar_analise', 'finalizar_analise' => TenantPermission::AnalyzeSample,
             'cancelar' => TenantPermission::CancelAppointment,
+            default => throw new LogicException('Ação de rotina não reconhecida.'),
         };
 
         $userId = (string) $user->getKey();
