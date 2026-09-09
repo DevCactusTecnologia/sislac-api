@@ -21,13 +21,21 @@ final class PacientesLiveContract
             flags: JSON_THROW_ON_ERROR,
         );
 
-        /** @var list<array{name:string,type:string,nullable:bool}> $expectedColumns */
+        /** @var list<array<string, mixed>> $expectedColumns */
         $expectedColumns = array_map(
-            static fn (array $column): array => [
-                'name' => (string) $column['name'],
-                'type' => (string) $column['type'],
-                'nullable' => (bool) $column['nullable'],
-            ],
+            static function (array $column): array {
+                $expected = [
+                    'name' => (string) $column['name'],
+                    'type' => (string) $column['type'],
+                    'nullable' => (bool) $column['nullable'],
+                ];
+
+                if (array_key_exists('default', $column)) {
+                    $expected['default'] = $column['default'];
+                }
+
+                return $expected;
+            },
             $contract['supabase']['columns'],
         );
 
@@ -39,6 +47,7 @@ final class PacientesLiveContract
                     'name' => (string) $values['name'],
                     'type' => (string) $values['type'],
                     'nullable' => (bool) $values['nullable'],
+                    'default' => $values['default_value'] === null ? null : (string) $values['default_value'],
                 ];
             },
             $connection->select(<<<'SQL'
@@ -48,7 +57,8 @@ final class PacientesLiveContract
                         WHEN data_type = 'timestamp with time zone' THEN 'timestamptz'
                         ELSE data_type
                     END AS type,
-                    (is_nullable = 'YES') AS nullable
+                    (is_nullable = 'YES') AS nullable,
+                    column_default AS default_value
                 FROM information_schema.columns
                 WHERE table_schema = 'public'
                   AND table_name = 'pacientes'
@@ -93,41 +103,43 @@ final class PacientesLiveContract
             }
         }
 
-        $policies = $connection->select(<<<'SQL'
-            SELECT cmd, coalesce(qual, '') AS qual, coalesce(with_check, '') AS with_check
-            FROM pg_policies
-            WHERE schemaname = 'public'
-              AND tablename = 'pacientes'
-            SQL);
+        $actualPolicies = array_map(
+            function (object $policy): array {
+                $values = get_object_vars($policy);
 
-        $policyExpressions = [];
+                return [
+                    'name' => (string) $values['name'],
+                    'command' => strtoupper((string) $values['cmd']),
+                    'permissive' => strtoupper((string) $values['permissive']),
+                    'roles' => $this->parseRoles($values['roles'] ?? null),
+                    'expression' => trim((string) $values['qual'].' '.(string) $values['with_check']),
+                ];
+            },
+            $connection->select(<<<'SQL'
+                SELECT
+                    policyname AS name,
+                    cmd,
+                    permissive,
+                    roles,
+                    coalesce(qual, '') AS qual,
+                    coalesce(with_check, '') AS with_check
+                FROM pg_policies
+                WHERE schemaname = 'public'
+                  AND tablename = 'pacientes'
+                ORDER BY cmd, policyname
+                SQL),
+        );
 
-        foreach ($policies as $policy) {
-            $values = get_object_vars($policy);
-            $command = strtoupper((string) $values['cmd']);
-            $policyExpressions[$command] = ($policyExpressions[$command] ?? '')
-                .' '.(string) $values['qual'].' '.(string) $values['with_check'];
-        }
-
-        $requiredPermissions = [
-            'SELECT' => (string) $contract['supabase']['policies']['select'],
-            'INSERT' => (string) $contract['supabase']['policies']['insert'],
-            'UPDATE' => (string) $contract['supabase']['policies']['update'],
-            'DELETE' => 'admin',
-        ];
-
-        foreach ($requiredPermissions as $command => $permission) {
-            if (! str_contains($policyExpressions[$command] ?? '', $permission)) {
-                $differences[] = "policy {$command} divergente: {$permission}";
-            }
-        }
+        /** @var array<string, array{name:string,permission:string,role:string}> $expectedPolicies */
+        $expectedPolicies = $contract['supabase']['policies_observed'];
+        $differences = array_merge($differences, $this->comparePolicies($actualPolicies, $expectedPolicies));
 
         return array_values(array_unique($differences));
     }
 
     /**
-     * @param  list<array{name:string,type:string,nullable:bool}>  $actual
-     * @param  list<array{name:string,type:string,nullable:bool}>  $expected
+     * @param  list<array<string, mixed>>  $actual
+     * @param  list<array<string, mixed>>  $expected
      * @return list<string>
      */
     public function compareColumns(array $actual, array $expected): array
@@ -136,11 +148,11 @@ final class PacientesLiveContract
         $actualByName = [];
 
         foreach ($actual as $column) {
-            $actualByName[$column['name']] = $column;
+            $actualByName[(string) $column['name']] = $column;
         }
 
         foreach ($expected as $column) {
-            $name = $column['name'];
+            $name = (string) $column['name'];
             $observed = $actualByName[$name] ?? null;
 
             if ($observed === null) {
@@ -157,6 +169,20 @@ final class PacientesLiveContract
                 $differences[] = "nullability divergente em {$name}";
             }
 
+            if (array_key_exists('default', $column)) {
+                $actualDefault = $this->normalizeDefault($observed['default'] ?? null);
+                $expectedDefault = $this->normalizeDefault($column['default']);
+
+                if ($actualDefault !== $expectedDefault) {
+                    $differences[] = sprintf(
+                        'default divergente em %s: %s != %s',
+                        $name,
+                        $this->displayDefault($actualDefault),
+                        $this->displayDefault($expectedDefault),
+                    );
+                }
+            }
+
             unset($actualByName[$name]);
         }
 
@@ -165,6 +191,124 @@ final class PacientesLiveContract
         }
 
         return $differences;
+    }
+
+    /**
+     * @param  list<array{name:string,command:string,permissive:string,roles:list<string>,expression:string}>  $actual
+     * @param  array<string, array{name:string,permission:string,role:string}>  $expected
+     * @return list<string>
+     */
+    public function comparePolicies(array $actual, array $expected): array
+    {
+        $differences = [];
+
+        foreach ($expected as $command => $policyContract) {
+            $matching = array_values(array_filter(
+                $actual,
+                static fn (array $policy): bool => $policy['command'] === $command,
+            ));
+
+            if (count($matching) !== 1) {
+                $differences[] = sprintf(
+                    'policy %s: quantidade divergente (%d != 1)',
+                    $command,
+                    count($matching),
+                );
+
+                continue;
+            }
+
+            $policy = $matching[0];
+
+            if ($policy['name'] !== $policyContract['name']) {
+                $differences[] = "policy {$command}: nome divergente";
+            }
+
+            if ($policy['permissive'] !== 'PERMISSIVE') {
+                $differences[] = "policy {$command}: tipo divergente";
+            }
+
+            if ($policy['roles'] !== [$policyContract['role']]) {
+                $differences[] = "policy {$command}: role divergente";
+            }
+
+            if (! str_contains($policy['expression'], $policyContract['permission'])) {
+                $differences[] = "policy {$command}: permissão divergente";
+            }
+        }
+
+        foreach ($actual as $policy) {
+            if (! array_key_exists($policy['command'], $expected)) {
+                $differences[] = sprintf(
+                    'policy inesperada: %s (%s)',
+                    $policy['name'],
+                    $policy['command'],
+                );
+            }
+        }
+
+        return $differences;
+    }
+
+    private function normalizeDefault(mixed $value): mixed
+    {
+        if (! is_string($value)) {
+            return $value;
+        }
+
+        $value = trim($value);
+
+        if ($value === 'true') {
+            return true;
+        }
+
+        if ($value === 'false') {
+            return false;
+        }
+
+        if (preg_match("/^'(.*)'::(?:text|character varying)$/s", $value, $matches) === 1) {
+            return str_replace("''", "'", $matches[1]);
+        }
+
+        return $value;
+    }
+
+    private function displayDefault(mixed $value): string
+    {
+        if ($value === null) {
+            return 'null';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
+        return (string) $value;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function parseRoles(mixed $roles): array
+    {
+        if (is_array($roles)) {
+            return array_values(array_map('strval', $roles));
+        }
+
+        if (! is_string($roles)) {
+            return [];
+        }
+
+        $roles = trim($roles, '{}');
+
+        if ($roles === '') {
+            return [];
+        }
+
+        return array_values(array_map(
+            static fn (string $role): string => trim($role, " \t\n\r\0\x0B\""),
+            explode(',', $roles),
+        ));
     }
 
     private function assertReadOnly(ConnectionInterface $connection): void
