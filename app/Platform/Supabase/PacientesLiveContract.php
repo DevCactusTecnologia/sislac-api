@@ -103,7 +103,7 @@ final class PacientesLiveContract
             }
         }
 
-        $actualPolicies = array_map(
+        $actualPolicies = array_values(array_map(
             function (object $policy): array {
                 $values = get_object_vars($policy);
 
@@ -128,7 +128,7 @@ final class PacientesLiveContract
                   AND tablename = 'pacientes'
                 ORDER BY cmd, policyname
                 SQL),
-        );
+        ));
 
         /** @var array<string, array{name:string,permission:string,role:string}> $expectedPolicies */
         $expectedPolicies = $contract['supabase']['policies_observed'];
@@ -292,7 +292,7 @@ final class PacientesLiveContract
     private function parseRoles(mixed $roles): array
     {
         if (is_array($roles)) {
-            return array_values(array_map('strval', $roles));
+            return array_map('strval', $roles);
         }
 
         if (! is_string($roles)) {
