@@ -271,7 +271,7 @@ it('aplica permissão específica para cada intenção', function () {
         ->where('user_id', $this->rotinaTransitionUser->getKey())
         ->where('tenant_id', $this->rotinaTransitionTenantId)
         ->update([
-            'role' => 'recepcionista',
+            'role' => 'financeiro',
             'permissions_extra' => json_encode(['registrar_coleta']),
         ]);
 
