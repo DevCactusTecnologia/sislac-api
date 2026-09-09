@@ -1,108 +1,81 @@
 # Baseline de segurança — SISLAC API
 
-Estes controles valem para todo o backend. Cada controle deve ser verificável,
-preferencialmente por teste automatizado ou guard de CI.
+Estes controles valem para todo o backend e devem ser verificáveis por teste, guard ou prova operacional.
 
 ## Rede
 
 - Somente 22, 80 e 443 ficam expostas na VPS.
-- PostgreSQL, Redis, pgAdmin e o Nginx interno escutam apenas em `127.0.0.1`.
-- TLS 1.2+ em conexões externas e HSTS no proxy público.
-- `fail2ban` protege SSH.
+- PostgreSQL, pgAdmin e Nginx interno não são publicados para a internet.
+- TLS 1.2+ e HSTS na borda pública.
+- Segredos vivem no ambiente, nunca no repositório.
 
-## Aplicação
+## Autenticação clínica durante a transição
 
-- MFA é obrigatório para `admin`, `gestor`, super-admin e suporte quando os
-  respectivos fluxos forem habilitados.
-- Senhas são armazenadas por hash suportado oficialmente pelo Laravel; a
-  compatibilidade com identidades importadas deve ser provada por teste antes
-  do corte.
-- O SPA first-party usa Laravel Sanctum em modo **stateful**, com sessão,
-  cookie HttpOnly e proteção CSRF, conforme a documentação do Laravel 13.
-- Bearer tokens ficam restritos a integrações, clientes externos ou automações
-  que realmente necessitem de API token, com abilities e expiração explícitas.
-- `tokenCan()` nunca substitui Policies/Gates e regras de autorização de
-  negócio para o SPA first-party.
-- Login regenera a sessão; logout invalida a sessão e regenera o token CSRF.
-- Rate limiting de endpoints públicos e autenticação é fail-closed.
-- CSP e HSTS no proxy público devem ser iguais ou mais estritos que os do
-  frontend em produção.
-- `X-Tenant` apenas **seleciona** entre vínculos já autorizados. A autoridade é
-  `memberships`; um valor forjado nunca concede acesso.
+- O frontend clínico continua autenticando no **Supabase Auth** enquanto o cutover de identidade não for uma fase explícita.
+- A API Laravel recebe Bearer token e valida a identidade server-side no Supabase Auth (`/auth/v1/user`) usando apenas URL pública e publishable key do projeto.
+- Token ausente ou rejeitado falha com 401; indisponibilidade do Auth falha fechada com 503.
+- Tokens e respostas internas do upstream não aparecem em payloads ou logs de erro.
+- Um UUID validado no Supabase deve existir previamente em `central.users`; a requisição não cria usuário, membership ou permissão automaticamente.
+- Autorização clínica continua sendo Laravel server-side por memberships/permissões. `X-Tenant` apenas seleciona um vínculo já autorizado.
+- `user_metadata` editável pelo usuário nunca é fonte de autorização.
+
+## Super Admin
+
+O Super Admin é um contexto separado, autenticado pela sessão web Laravel e restrito ao plano central. Essa sessão não transforma o login Laravel em segunda fonte de autenticação clínica.
 
 ## Banco
 
-- O papel HTTP (`sislac_app`) não possui `SUPERUSER`, `CREATEDB` ou
-  `CREATEROLE`.
-- Criar ou remover bancos é responsabilidade exclusiva do provisionamento,
-  executado fora do caminho normal de requisição e auditado.
-- Auditorias clínicas e financeiras são append-only.
-- Resultado assinado é imutável; a regra será preservada e coberta por teste
-  de regressão antes da migração do módulo de resultados.
-- Backups têm retenção definida e restore precisa ser ensaiado em ambiente
-  separado.
-- Produção utiliza PostgreSQL; MySQL, MariaDB e SQL Server não fazem parte do
-  contrato do SISLAC.
+- O papel HTTP (`sislac_app`) não possui `SUPERUSER`, `CREATEDB` ou `CREATEROLE`.
+- Criar bancos é responsabilidade exclusiva do provisionamento auditado.
+- `supabase_source` nunca é default e deve usar credencial dedicada de leitura.
+- No projeto atual, `supabase_read_only_user` foi verificado com `default_transaction_read_only=on`, SELECT em `public.pacientes`, sem INSERT/UPDATE/DELETE e sem CREATE DATABASE.
+- O código reforça essa proteção com `SET default_transaction_read_only = on`; a conformidade live falha se a sessão não estiver read-only.
+- Auditorias clínicas/financeiras devem ser append-only quando os respectivos módulos forem migrados.
+- Produção utiliza PostgreSQL; MySQL, MariaDB e SQL Server não fazem parte deste backend.
 
 ## Dados sensíveis
 
-- Dados clínicos e identificadores pessoais só aparecem em logs quando forem
-  estritamente necessários e explicitamente sanitizados.
-- Credenciais de integração são cifradas em repouso e nunca retornam em API.
-- Segredos da plataforma vivem em configuração segura do ambiente, nunca no
-  repositório.
-- Testes e fixtures usam exclusivamente dados sintéticos ou anonimizados.
+- Dados clínicos e identificadores pessoais só aparecem em logs quando estritamente necessários e sanitizados.
+- Credenciais de integração nunca retornam em API.
+- Testes usam dados sintéticos/anonimizados.
+- Nenhum `service_role`, secret key ou senha do Supabase é versionado.
 
-## Isolamento multi-tenant
+## Isolamento database-per-lab
 
 Casos obrigatórios de regressão:
 
 - usuário de A não lê nem grava B;
-- `X-Tenant` forjado retorna negação sem inicializar conexão de B;
+- `X-Tenant` forjado não inicializa B;
 - membership suspensa perde acesso imediatamente;
-- usuário com vários vínculos só entra no tenant explicitamente selecionado e
-  autorizado;
-- exceção durante uma requisição não deixa contexto tenant para a seguinte;
-- alternância A → B → A → B no mesmo worker não vaza conexão ou contexto;
-- jobs, cache, filesystem e broadcasting carregam contexto tenant explícito
-  quando esses recursos forem habilitados.
+- usuário multi-lab só entra no tenant selecionado e autorizado;
+- exceção não deixa contexto tenant para a requisição seguinte;
+- alternância A → B → A → B não vaza conexão/contexto.
 
-## Baseline Supabase
+Fila, filesystem compartilhado ou broadcasting só recebem regras tenant quando esses recursos realmente forem habilitados.
 
-O Supabase é referência de comportamento durante a migração, não autoridade
-absoluta de segurança. A superfície observada pelo Laravel está fixada em
-`docs/contracts/supabase-baseline.json`, com SHA do frontend, fingerprints dos
-artefatos geradores, contagens de tabelas/views, RPCs, Edge Functions, buckets
-e canais realtime. O manifesto contém apenas metadados, nunca linhas clínicas.
+## Conformidade Supabase
 
-Findings conhecidos dos advisors são preservados no manifesto para impedir que
-débitos de segurança ou performance sejam copiados sem revisão. Em particular,
-funções privilegiadas, políticas RLS subótimas e índices redundantes devem ser
-substituídos por controles equivalentes ou melhores, preservando o resultado
-funcional esperado.
+Há duas garantias diferentes:
 
-## LGPD e rastreabilidade
+- **integridade offline:** manifesto versionado, hash e invariantes; roda no CI sem credencial de produção;
+- **conformidade live:** consulta explícita read-only ao Supabase real para cada módulo migrado.
 
-- Acesso a dados de saúde segue menor privilégio e trilha de auditoria.
-- Offboarding de laboratório exige evidência de remoção do banco e storage.
-- Portabilidade deve gerar pacote verificável sem alterar a fonte original.
-- Trilhas da coleta à liberação permanecem preservadas e cobertas por testes
-  de regressão antes do corte de cada módulo.
+O CI não chama o manifesto estático de “conformidade Supabase ↔ Laravel”. Uma onda só é declarada conforme depois do gate live correspondente.
 
-## Gates automatizados da Fase 1
+## Infraestrutura mínima
 
-- `composer audit --locked --no-interaction`: vulnerabilidades conhecidas em
-  dependências PHP.
-- `php scripts/check-supabase-contract.php`: integridade determinística do
-  contrato Supabase ↔ Laravel.
-- `vendor/bin/pint --test`: padrão de código Laravel.
-- `vendor/bin/phpstan analyse --no-progress --memory-limit=1G`: Larastan nível
-  8 obrigatório, sem fallback opcional.
-- `vendor/bin/pest --parallel`: autenticação stateful/CSRF, isolamento A/B,
-  tenant forjado, membership suspensa, cleanup após exceção, provisionamento,
-  mass assignment, payloads inválidos, alternância de contexto e baseline de
-  query-count/performance.
-- `scripts/check-no-central-in-tenant.sh`: fronteira Platform ↔ Domain.
-- `scripts/check-database-contract.sh`: contrato PostgreSQL-only.
-- `scripts/check-file-size.sh`: bloqueio de arquivos anormalmente grandes.
-- guard de `.env`: nenhum segredo ou ambiente preenchido no repositório.
+- fila padrão é `sync`;
+- não existem tabelas `jobs`, workers, Redis ou Horizon sem consumidor runtime;
+- `plans`/`subscriptions` não fazem parte da baseline de novos bancos enquanto não houver regra de negócio concreta;
+- instalações existentes são auditadas antes de qualquer cleanup destrutivo.
+
+## Gates automatizados
+
+- `composer audit --locked --no-interaction`;
+- verificação de integridade do manifesto Supabase;
+- `vendor/bin/pint --test`;
+- `vendor/bin/phpstan analyse --no-progress --memory-limit=1G`;
+- `vendor/bin/pest --parallel`;
+- guards Platform ↔ Domain, PostgreSQL-only, tamanho de arquivo, `.env` e infraestrutura sem consumidor.
+
+O gate live é deliberadamente separado do CI comum para não inserir credenciais de produção em execução de código de PR.
