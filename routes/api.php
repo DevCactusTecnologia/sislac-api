@@ -6,10 +6,13 @@ use App\Http\Controllers\Atendimentos\ShowAtendimentoByProtocoloController;
 use App\Http\Controllers\Atendimentos\ShowAtendimentoController;
 use App\Http\Controllers\Atendimentos\StoreAtendimentoController;
 use App\Http\Controllers\Atendimentos\UpdateAtendimentoController;
+use App\Http\Controllers\Financeiro\CloseCaixaController;
 use App\Http\Controllers\Financeiro\ListAReceberPacientesController;
 use App\Http\Controllers\Financeiro\ListRecebimentosPacientesController;
+use App\Http\Controllers\Financeiro\OpenCaixaController;
 use App\Http\Controllers\Financeiro\RegisterPacientePaymentController;
 use App\Http\Controllers\Financeiro\ReversePacientePaymentController;
+use App\Http\Controllers\Financeiro\ShowOpenCaixaController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\Pacientes\CreatePacienteController;
 use App\Http\Controllers\Pacientes\ListPacientesController;
@@ -79,6 +82,19 @@ Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financei
     ->post('/financeiro/pagamentos/{id}/estorno', ReversePacientePaymentController::class)
     ->whereNumber('id')
     ->name('financeiro.pagamentos.estorno');
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_financeiro'])
+    ->get('/financeiro/caixa/aberto', ShowOpenCaixaController::class)
+    ->name('financeiro.caixa.aberto');
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financeira'])
+    ->post('/financeiro/caixa/abrir', OpenCaixaController::class)
+    ->name('financeiro.caixa.abrir');
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financeira'])
+    ->post('/financeiro/caixa/{id}/fechar', CloseCaixaController::class)
+    ->whereNumber('id')
+    ->name('financeiro.caixa.fechar');
 
 Route::middleware(['supabase.auth', 'tenant'])
     ->get('/rotina/config', ShowRotinaConfigController::class)
