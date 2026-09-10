@@ -7,6 +7,7 @@ use App\Domain\Atendimentos\Models\AtendimentoPagamento;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 final class RegisterPacientePayment
 {
@@ -24,18 +25,18 @@ final class RegisterPacientePayment
                 throw new DomainException('Atendimento cancelado não pode receber pagamento.');
             }
 
-            $valor = bcadd((string) $payload['valor'], '0', 2);
-            $saldo = $this->currentBalance($atendimentoId);
+            $valor = (string) $payload['valor'];
+            $position = $this->paymentPosition($atendimentoId, $valor);
 
-            if (bccomp($valor, '0.00', 2) <= 0) {
+            if ($position['valor_centavos'] <= 0) {
                 throw new DomainException('Valor do pagamento deve ser maior que zero.');
             }
 
-            if (bccomp($saldo, '0.00', 2) <= 0) {
+            if ($position['saldo_centavos'] <= 0) {
                 throw new DomainException('Atendimento não possui saldo a receber do paciente.');
             }
 
-            if (bccomp($valor, $saldo, 2) > 0) {
+            if ($position['valor_centavos'] > $position['saldo_centavos']) {
                 throw new DomainException('Valor do pagamento excede o saldo atual do atendimento.');
             }
 
@@ -55,21 +56,39 @@ final class RegisterPacientePayment
         });
     }
 
-    private function currentBalance(int $atendimentoId): string
+    /** @return array{valor_centavos:int,saldo_centavos:int} */
+    private function paymentPosition(int $atendimentoId, string $valor): array
     {
-        $devido = DB::table('atendimento_exames')
-            ->where('atendimento_id', $atendimentoId)
-            ->where('status', '<>', 'cancelado')
-            ->whereRaw("COALESCE(cobranca_destino, 'paciente') <> 'convenio'")
-            ->sum('valor');
+        $row = DB::selectOne(<<<'SQL'
+            SELECT
+                ROUND(CAST(? AS numeric) * 100)::bigint AS valor_centavos,
+                GREATEST(
+                    ROUND((
+                        COALESCE((
+                            SELECT SUM(e.valor)
+                            FROM public.atendimento_exames AS e
+                            WHERE e.atendimento_id = ?
+                              AND e.status <> 'cancelado'
+                              AND COALESCE(e.cobranca_destino, 'paciente') <> 'convenio'
+                        ), 0)
+                        - COALESCE((
+                            SELECT SUM(p.valor)
+                            FROM public.atendimento_pagamentos AS p
+                            WHERE p.atendimento_id = ?
+                              AND COALESCE(p.status_pagamento, 'efetuado') <> 'estornado'
+                        ), 0)
+                    ) * 100),
+                    0
+                )::bigint AS saldo_centavos
+        SQL, [$valor, $atendimentoId, $atendimentoId]);
 
-        $pago = DB::table('atendimento_pagamentos')
-            ->where('atendimento_id', $atendimentoId)
-            ->whereRaw("COALESCE(status_pagamento, 'efetuado') <> 'estornado'")
-            ->sum('valor');
+        if ($row === null) {
+            throw new RuntimeException('Não foi possível calcular a posição financeira do atendimento.');
+        }
 
-        $saldo = bcsub((string) $devido, (string) $pago, 2);
-
-        return bccomp($saldo, '0.00', 2) > 0 ? $saldo : '0.00';
+        return [
+            'valor_centavos' => (int) $row->valor_centavos,
+            'saldo_centavos' => (int) $row->saldo_centavos,
+        ];
     }
 }
