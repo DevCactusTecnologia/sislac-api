@@ -61,6 +61,37 @@ return new class extends Migration
             FOR EACH ROW
             EXECUTE FUNCTION public.financeiro_block_pagamento_delete();
 
+            CREATE OR REPLACE FUNCTION public.financeiro_protect_pagamento_update()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            SECURITY INVOKER
+            SET search_path = ''
+            AS $$
+            BEGIN
+                IF NEW.atendimento_id IS DISTINCT FROM OLD.atendimento_id
+                   OR NEW.tipo IS DISTINCT FROM OLD.tipo
+                   OR NEW.valor IS DISTINCT FROM OLD.valor
+                   OR NEW.data IS DISTINCT FROM OLD.data
+                   OR NEW.observacao IS DISTINCT FROM OLD.observacao
+                   OR NEW.caixa_sessao_id IS DISTINCT FROM OLD.caixa_sessao_id
+                   OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+                    RAISE EXCEPTION 'pagamento efetivo é imutável; use estorno';
+                END IF;
+
+                IF COALESCE(OLD.status_pagamento, 'efetuado') = 'estornado'
+                   OR NEW.status_pagamento IS DISTINCT FROM 'estornado' THEN
+                    RAISE EXCEPTION 'única alteração permitida em pagamento é a transição para estornado';
+                END IF;
+
+                RETURN NEW;
+            END;
+            $$;
+
+            CREATE TRIGGER trg_financeiro_protect_pagamento_update
+            BEFORE UPDATE ON public.atendimento_pagamentos
+            FOR EACH ROW
+            EXECUTE FUNCTION public.financeiro_protect_pagamento_update();
+
             CREATE OR REPLACE FUNCTION public.financeiro_validate_pagamento_insert()
             RETURNS trigger
             LANGUAGE plpgsql
@@ -124,6 +155,8 @@ return new class extends Migration
         DB::unprepared(<<<'SQL'
             DROP TRIGGER IF EXISTS trg_financeiro_validate_pagamento_insert ON public.atendimento_pagamentos;
             DROP FUNCTION IF EXISTS public.financeiro_validate_pagamento_insert();
+            DROP TRIGGER IF EXISTS trg_financeiro_protect_pagamento_update ON public.atendimento_pagamentos;
+            DROP FUNCTION IF EXISTS public.financeiro_protect_pagamento_update();
             DROP TRIGGER IF EXISTS trg_financeiro_block_pagamento_delete ON public.atendimento_pagamentos;
             DROP FUNCTION IF EXISTS public.financeiro_block_pagamento_delete();
             DROP TRIGGER IF EXISTS trg_financeiro_estornos_append_only ON public.financeiro_estornos;
