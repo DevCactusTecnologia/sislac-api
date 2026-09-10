@@ -37,7 +37,7 @@ final class MigratedContractsLiveContract
                     '%I.%I(%s)',
                     n.nspname,
                     p.proname,
-                    pg_get_function_identity_arguments(p.oid)
+                    oidvectortypes(p.proargtypes)
                 ) AS identity
                 FROM pg_proc p
                 JOIN pg_namespace n ON n.oid = p.pronamespace
