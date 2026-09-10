@@ -25,7 +25,7 @@ return new class extends Migration
         });
 
         DB::statement("ALTER TABLE financeiro_estornos ADD CONSTRAINT financeiro_estornos_origem_tipo_check CHECK (origem_tipo IN ('pagamento', 'fatura', 'saida'))");
-        DB::statement("ALTER TABLE financeiro_estornos ADD CONSTRAINT financeiro_estornos_motivo_check CHECK (length(btrim(motivo)) > 0)");
+        DB::statement('ALTER TABLE financeiro_estornos ADD CONSTRAINT financeiro_estornos_motivo_check CHECK (length(btrim(motivo)) > 0)');
         DB::statement('ALTER TABLE financeiro_estornos ADD CONSTRAINT financeiro_estornos_valor_check CHECK (valor > 0)');
 
         DB::unprepared(<<<'SQL'
