@@ -67,6 +67,12 @@ final class CloseCaixa
                 FROM public.atendimento_pagamentos AS p
                 WHERE p.caixa_sessao_id = ?
                   AND COALESCE(p.status_pagamento, 'efetuado') <> 'estornado'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM public.financeiro_estornos AS e
+                      WHERE e.origem_tipo = 'pagamento'
+                        AND e.origem_id = p.id
+                  )
             ), saidas AS (
                 SELECT COALESCE(SUM(s.valor), 0)::numeric(14, 2) AS total
                 FROM public.financeiro_saidas AS s
