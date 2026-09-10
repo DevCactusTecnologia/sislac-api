@@ -13,6 +13,7 @@ use App\Http\Controllers\Financeiro\OpenCaixaController;
 use App\Http\Controllers\Financeiro\RegisterPacientePaymentController;
 use App\Http\Controllers\Financeiro\ReversePacientePaymentController;
 use App\Http\Controllers\Financeiro\ShowOpenCaixaController;
+use App\Http\Controllers\Financeiro\StoreFinanceiroSaidaController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\Pacientes\CreatePacienteController;
 use App\Http\Controllers\Pacientes\ListPacientesController;
@@ -82,6 +83,10 @@ Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financei
     ->post('/financeiro/pagamentos/{id}/estorno', ReversePacientePaymentController::class)
     ->whereNumber('id')
     ->name('financeiro.pagamentos.estorno');
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financeira'])
+    ->post('/financeiro/saidas', StoreFinanceiroSaidaController::class)
+    ->name('financeiro.saidas.store');
 
 Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_financeiro'])
     ->get('/financeiro/caixa/aberto', ShowOpenCaixaController::class)
