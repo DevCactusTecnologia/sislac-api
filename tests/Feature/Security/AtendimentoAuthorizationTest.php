@@ -123,34 +123,33 @@ it('exige cancelar_atendimento para cancelamento mesmo quando usuário pode edit
     ])->assertForbidden();
 });
 
-it('permite operação exclusivamente financeira com registrar_pagamento sem editar_atendimento', function () {
+it('permite registrar pagamento com registrar_pagamento sem editar_atendimento', function () {
     DB::connection('central')->table('memberships')
         ->where('user_id', $this->atendimentoAuthUser->getKey())
         ->where('tenant_id', $this->atendimentoAuthTenant->getKey())
         ->update(['role' => 'financeiro']);
 
-    $this->patchJson('/api/atendimentos/'.$this->atendimentoAuthId, [
-        'pagamentos' => [[
-            'tipo' => 'PIX',
-            'valor' => '30.00',
-            'observacao' => 'Pagamento financeiro',
-        ]],
-    ])->assertOk()
-        ->assertJsonPath('data.status_pagamento', 'Pagamento parcial');
+    $this->postJson('/api/financeiro/atendimentos/'.$this->atendimentoAuthId.'/pagamentos', [
+        'tipo' => 'PIX',
+        'valor' => '30.00',
+        'observacao' => 'Pagamento financeiro',
+    ])->assertCreated()
+        ->assertJsonPath('data.status_pagamento', 'efetuado');
+
+    $pdo = atendimentoAuthControlConnection($this->atendimentoAuthDatabase);
+
+    expect((string) $pdo->query("SELECT status_pagamento FROM atendimentos WHERE id = {$this->atendimentoAuthId}")?->fetchColumn())
+        ->toBe('Pagamento parcial');
 });
 
-it('operação mista exige editar_atendimento e registrar_pagamento', function () {
+it('registrar_pagamento não concede editar_atendimento ao papel financeiro', function () {
     DB::connection('central')->table('memberships')
         ->where('user_id', $this->atendimentoAuthUser->getKey())
         ->where('tenant_id', $this->atendimentoAuthTenant->getKey())
         ->update(['role' => 'financeiro']);
 
     $this->patchJson('/api/atendimentos/'.$this->atendimentoAuthId, [
-        'solicitante' => 'Alteração Mista',
-        'pagamentos' => [[
-            'tipo' => 'PIX',
-            'valor' => '30.00',
-        ]],
+        'solicitante' => 'Alteração indevida pelo financeiro',
     ])->assertForbidden();
 });
 
