@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "captured_at": "2026-09-08",
+  "version": 3,
+  "captured_at": "2026-09-10",
   "frontend": {
     "repository": "DevCactusTecnologia/sislacprivado",
     "sha": "57cc9be96703a41b207d530088369da1cc23cd94"
@@ -11,7 +11,62 @@
     "runtime": "single-tenant"
   },
   "migrated_contracts": [
-    "pacientes"
+    {
+      "name": "pacientes",
+      "relations": ["public.pacientes"],
+      "routines": []
+    },
+    {
+      "name": "atendimentos",
+      "relations": [
+        "public.atendimentos",
+        "public.atendimento_exames",
+        "public.atendimento_pagamentos",
+        "public.atendimento_audit"
+      ],
+      "routines": ["public.recompute_atendimento_completo(bigint)"]
+    },
+    {
+      "name": "rotina",
+      "relations": ["public.lab_config", "public.atendimento_exames"],
+      "routines": []
+    },
+    {
+      "name": "financeiro-core",
+      "relations": [
+        "public.atendimentos",
+        "public.atendimento_exames",
+        "public.atendimento_pagamentos",
+        "public.financeiro_estornos",
+        "public.financeiro_entradas"
+      ],
+      "routines": [
+        "public.financeiro_a_receber_v2(text,text,timestamp with time zone,timestamp with time zone,text,timestamp with time zone,bigint,integer)",
+        "public.financeiro_estornar(text,bigint,text)"
+      ]
+    },
+    {
+      "name": "financeiro-totais-atendimento",
+      "relations": ["public.atendimentos", "public.atendimento_exames"],
+      "routines": ["public.recompute_atendimento_completo(bigint)"]
+    },
+    {
+      "name": "financeiro-caixa-operacional",
+      "relations": [
+        "public.caixa_sessoes",
+        "public.atendimento_pagamentos",
+        "public.financeiro_saidas"
+      ],
+      "routines": [
+        "public.caixa_abrir(text,numeric,text)",
+        "public.caixa_fechar(bigint,text)"
+      ]
+    },
+    {
+      "name": "financeiro-saidas",
+      "relations": ["public.financeiro_saidas", "public.financeiro_estornos"],
+      "routines": ["public.financeiro_estornar(text,bigint,text)"]
+    }
   ],
-  "sha256": "557fdd603b152acc3ed8329a471e82fad3b938a947ac3b469ba7ffb8c14e466b"
+  "sha256": "765241708b7842571b51fe258d207b687c20717a13b5fbc85659bac62fcd2555"
 }
