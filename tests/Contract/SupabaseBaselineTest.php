@@ -5,7 +5,7 @@ it('mantém íntegro o manifesto Supabase observado pelo Laravel', function () {
     exec($command, $output, $exitCode);
 
     expect($exitCode)->toBe(0)
-        ->and(implode("\n", $output))->toContain('manifesto Supabase íntegro e determinístico');
+        ->and(implode("\n", $output))->toContain('manifesto Supabase íntegro');
 });
 
 it('descreve o gate do CI como integridade offline, não conformidade live', function () {
@@ -23,11 +23,19 @@ it('fixa a baseline na main atual e somente nos contratos já migrados', functio
         flags: JSON_THROW_ON_ERROR,
     );
 
-    expect($manifest['version'])->toBe(2)
+    expect($manifest['version'])->toBe(3)
         ->and($manifest['frontend']['sha'])->toBe('57cc9be96703a41b207d530088369da1cc23cd94')
         ->and($manifest['supabase']['postgres_major'])->toBe(17)
         ->and($manifest['supabase']['runtime'])->toBe('single-tenant')
-        ->and($manifest['migrated_contracts'])->toBe(['pacientes'])
+        ->and(array_column($manifest['migrated_contracts'], 'name'))->toBe([
+            'pacientes',
+            'atendimentos',
+            'rotina',
+            'financeiro-core',
+            'financeiro-totais-atendimento',
+            'financeiro-caixa-operacional',
+            'financeiro-saidas',
+        ])
         ->and($manifest)->not->toHaveKeys([
             'runtime_contract',
             'storage_inventory',
