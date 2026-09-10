@@ -163,3 +163,25 @@ it('impede sobrepagamento mesmo por escrita direta no banco', function () {
 
     expect((string) $pdo->query("SELECT COALESCE(SUM(valor), 0)::numeric(14,2) FROM atendimento_pagamentos WHERE atendimento_id = {$seed['atendimento_id']} AND COALESCE(status_pagamento, 'efetuado') <> 'estornado'")?->fetchColumn())->toBe('50.00');
 });
+
+it('mantém pagamento efetivo imutável e permite somente sua transição para estornado', function () {
+    $pdo = financeiroSchemaControlConnection($this->financeiroSchemaDatabase);
+    $seed = financeiroSchemaSeedPayment($pdo);
+
+    expect(fn () => $pdo->exec("UPDATE atendimento_pagamentos SET valor = 40 WHERE id = {$seed['pagamento_id']}"))
+        ->toThrow(PDOException::class)
+        ->and(fn () => $pdo->exec("UPDATE atendimento_pagamentos SET tipo = 'Dinheiro' WHERE id = {$seed['pagamento_id']}"))
+        ->toThrow(PDOException::class);
+
+    $pdo->exec("UPDATE atendimento_pagamentos SET status_pagamento = 'estornado' WHERE id = {$seed['pagamento_id']}");
+
+    $row = $pdo->query("SELECT tipo, valor::text, status_pagamento FROM atendimento_pagamentos WHERE id = {$seed['pagamento_id']}")?->fetch(PDO::FETCH_ASSOC);
+    expect($row)->toBe([
+        'tipo' => 'PIX',
+        'valor' => '50.00',
+        'status_pagamento' => 'estornado',
+    ]);
+
+    expect(fn () => $pdo->exec("UPDATE atendimento_pagamentos SET status_pagamento = 'efetuado' WHERE id = {$seed['pagamento_id']}"))
+        ->toThrow(PDOException::class);
+});
