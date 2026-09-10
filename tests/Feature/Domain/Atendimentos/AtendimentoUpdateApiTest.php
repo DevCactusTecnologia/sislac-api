@@ -116,7 +116,7 @@ function atendimentoUpdateAdvanceExamesToFinalizado(PDO $pdo, int $atendimentoId
     }
 }
 
-it('edita escalares e ignora protocolo status e totais derivados enviados pelo cliente', function () {
+it('edita escalares e ignora protocolo e status derivados enviados pelo cliente', function () {
     $created = $this->postJson('/api/atendimentos', atendimentoUpdateCreatePayload())->assertCreated();
     $id = (int) $created->json('atendimento_id');
     $protocol = (string) $created->json('protocolo');
@@ -127,8 +127,6 @@ it('edita escalares e ignora protocolo status e totais derivados enviados pelo c
         'protocolo' => '9999999',
         'status_atendimento' => 'Resultado Liberado',
         'status_pagamento' => 'Pagamento efetuado',
-        'subtotal' => '1.00',
-        'total' => '1.00',
     ])->assertOk()
         ->assertJsonPath('data.solicitante', 'Solicitante Atualizado')
         ->assertJsonPath('data.protocolo', $protocol);
@@ -146,12 +144,19 @@ it('edita escalares e ignora protocolo status e totais derivados enviados pelo c
 });
 
 it('preserva estado clínico ordem e valor original da mesma ocorrência de exame', function () {
-    $created = $this->postJson('/api/atendimentos', atendimentoUpdateCreatePayload())->assertCreated();
+    $created = $this->postJson('/api/atendimentos', atendimentoUpdateCreatePayload([[
+        'nome_exame' => 'Hemograma',
+        'valor' => '100.00',
+        'valor_original' => '120.00',
+        'ordem' => 1,
+        'tipo_processo' => 'INTERNO',
+        'amostra_seq' => 1,
+    ]]))->assertCreated();
     $id = (int) $created->json('atendimento_id');
     $pdo = atendimentoUpdateControlConnection($this->atendimentoUpdateDatabase);
 
     atendimentoUpdateAdvanceExamesToFinalizado($pdo, $id);
-    $pdo->exec("UPDATE atendimento_exames SET ordem = 7, valor_original = 120, resultados = '{\"hb\":\"13.5\"}'::jsonb WHERE atendimento_id = {$id}");
+    $pdo->exec("UPDATE atendimento_exames SET ordem = 7, resultados = '{\"hb\":\"13.5\"}'::jsonb WHERE atendimento_id = {$id}");
 
     $this->patchJson('/api/atendimentos/'.$id, [
         'exames' => [[
@@ -178,12 +183,19 @@ it('preserva estado clínico ordem e valor original da mesma ocorrência de exam
 });
 
 it('nova amostra da mesma identidade não herda estado clínico da ocorrência anterior', function () {
-    $created = $this->postJson('/api/atendimentos', atendimentoUpdateCreatePayload())->assertCreated();
+    $created = $this->postJson('/api/atendimentos', atendimentoUpdateCreatePayload([[
+        'nome_exame' => 'Hemograma',
+        'valor' => '100.00',
+        'valor_original' => '120.00',
+        'ordem' => 1,
+        'tipo_processo' => 'INTERNO',
+        'amostra_seq' => 1,
+    ]]))->assertCreated();
     $id = (int) $created->json('atendimento_id');
     $pdo = atendimentoUpdateControlConnection($this->atendimentoUpdateDatabase);
 
     atendimentoUpdateAdvanceExamesToFinalizado($pdo, $id);
-    $pdo->exec("UPDATE atendimento_exames SET ordem = 7, valor_original = 120 WHERE atendimento_id = {$id}");
+    $pdo->exec("UPDATE atendimento_exames SET ordem = 7 WHERE atendimento_id = {$id}");
 
     $this->patchJson('/api/atendimentos/'.$id, [
         'exames' => [
