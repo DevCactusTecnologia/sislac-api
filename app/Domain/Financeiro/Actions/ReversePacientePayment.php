@@ -18,7 +18,13 @@ final class ReversePacientePayment
                 ->lockForUpdate()
                 ->findOrFail($pagamentoId);
 
-            if ($pagamento->getAttribute('status_pagamento') === 'estornado') {
+            $jaEstornado = $pagamento->getAttribute('status_pagamento') === 'estornado'
+                || FinanceiroEstorno::query()
+                    ->where('origem_tipo', 'pagamento')
+                    ->where('origem_id', $pagamentoId)
+                    ->exists();
+
+            if ($jaEstornado) {
                 throw new DomainException('Pagamento já foi estornado.');
             }
 
