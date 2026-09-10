@@ -112,10 +112,6 @@ function validAtendimentoCreatePayload(?string $idempotencyKey = null): array
         'idempotency_key' => $idempotencyKey ?? (string) Str::uuid(),
         'status_atendimento' => 'Resultado Liberado',
         'status_pagamento' => 'Pagamento efetuado',
-        'subtotal' => '9999.99',
-        'total' => '9999.99',
-        'desconto_total' => '9999.99',
-        'acrescimo_total' => '9999.99',
         'exames' => [
             [
                 'nome_exame' => 'Hemograma',
