@@ -85,6 +85,22 @@ return new class extends Migration
             FOR EACH ROW
             EXECUTE FUNCTION public.caixa_touch_updated_at();
 
+            CREATE OR REPLACE FUNCTION public.caixa_block_session_delete()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            SECURITY INVOKER
+            SET search_path = ''
+            AS $$
+            BEGIN
+                RAISE EXCEPTION 'sessão de caixa não pode ser excluída';
+            END;
+            $$;
+
+            CREATE TRIGGER trg_caixa_block_session_delete
+            BEFORE DELETE ON public.caixa_sessoes
+            FOR EACH ROW
+            EXECUTE FUNCTION public.caixa_block_session_delete();
+
             CREATE OR REPLACE FUNCTION public.caixa_attach_pagamento()
             RETURNS trigger
             LANGUAGE plpgsql
@@ -280,6 +296,8 @@ return new class extends Migration
             DROP FUNCTION IF EXISTS public.caixa_guard_sessao_pagamento();
             DROP TRIGGER IF EXISTS trg_caixa_attach_pagamento ON public.atendimento_pagamentos;
             DROP FUNCTION IF EXISTS public.caixa_attach_pagamento();
+            DROP TRIGGER IF EXISTS trg_caixa_block_session_delete ON public.caixa_sessoes;
+            DROP FUNCTION IF EXISTS public.caixa_block_session_delete();
             DROP TRIGGER IF EXISTS trg_caixa_touch_updated_at ON public.caixa_sessoes;
             DROP FUNCTION IF EXISTS public.caixa_touch_updated_at();
         SQL);
