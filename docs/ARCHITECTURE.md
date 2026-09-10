@@ -1,6 +1,6 @@
 # Arquitetura — SISLAC API
 
-A especificação normativa desta migração é `docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`, complementada pela Fase 0 aprovada em `docs/superpowers/specs/2026-09-08-fase-0-saneamento-fundacao-design.md`. A onda de Rotina / Fluxo Operacional é especificada em `docs/superpowers/specs/2026-09-09-rotina-fluxo-operacional-design.md`. O contrato da subfase Financeiro Core está em `docs/contracts/financeiro-core.json` e sua descrição em `docs/financeiro-core.md`. O hardening de totais canônicos está em `docs/contracts/financeiro-totais-atendimento.json` e `docs/financeiro-totais-atendimento.md`. O Caixa Operacional está em `docs/contracts/financeiro-caixa-operacional.json` e `docs/financeiro-caixa-operacional.md`. Documentação oficial Laravel 13, PostgreSQL, Supabase e `stancl/tenancy` prevalece sobre comportamento legado.
+A especificação normativa desta migração é `docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`, complementada pela Fase 0 aprovada em `docs/superpowers/specs/2026-09-08-fase-0-saneamento-fundacao-design.md`. A onda de Rotina / Fluxo Operacional é especificada em `docs/superpowers/specs/2026-09-09-rotina-fluxo-operacional-design.md`. O contrato da subfase Financeiro Core está em `docs/contracts/financeiro-core.json` e sua descrição em `docs/financeiro-core.md`. O hardening de totais canônicos está em `docs/contracts/financeiro-totais-atendimento.json` e `docs/financeiro-totais-atendimento.md`. O Caixa Operacional está em `docs/contracts/financeiro-caixa-operacional.json` e `docs/financeiro-caixa-operacional.md`. Saídas/Despesas está em `docs/contracts/financeiro-saidas.json` e `docs/financeiro-saidas.md`. Documentação oficial Laravel 13, PostgreSQL, Supabase e `stancl/tenancy` prevalece sobre comportamento legado.
 
 ## Objetivo
 
@@ -104,7 +104,7 @@ Dados clínicos permanecem nos bancos tenant, nunca duplicados no central.
 
 ## Domínio do laboratório
 
-`app/Domain` contém as regras que operam no banco dedicado do laboratório. Pacientes é a primeira onda concluída. Atendimentos, Rotina / Fluxo Operacional, Financeiro Core, Totais Canônicos e Caixa Operacional estão implementados em branches encadeadas e permanecem isolados do `main` e do cutover do frontend até que as ondas dependentes e seus gates sejam concluídos.
+`app/Domain` contém as regras que operam no banco dedicado do laboratório. Pacientes é a primeira onda concluída. Atendimentos, Rotina / Fluxo Operacional, Financeiro Core, Totais Canônicos, Caixa Operacional e Saídas/Despesas estão implementados em branches encadeadas e permanecem isolados do `main` e do cutover do frontend até que as ondas dependentes e seus gates sejam concluídos.
 
 ### Atendimentos
 
@@ -230,11 +230,34 @@ saldo_final = valor_abertura + dinheiro + pix - saidas
 
 Pagamentos estornados não entram nas entradas. Saídas só são descontadas quando estão pagas, vinculadas e sem estorno de origem `saida`. Uma segunda tentativa de fechamento retorna conflito sem reescrever o histórico.
 
-`financeiro_saidas` existe nesta onda somente como dependência estrutural necessária ao fechamento; nenhum CRUD HTTP de despesas é antecipado. `DELETE` físico tanto de Saída quanto de sessão de Caixa é bloqueado no banco. Fechar uma sessão continua sendo uma atualização legítima de estado, portanto a sessão não é tratada como append-only.
+`financeiro_saidas` nasceu nesta onda como dependência estrutural necessária ao fechamento. O módulo operacional correspondente é implementado na subfase seguinte, sem alterar a fórmula ou a semântica histórica do Caixa. `DELETE` físico tanto de Saída quanto de sessão de Caixa é bloqueado no banco. Fechar uma sessão continua sendo uma atualização legítima de estado, portanto a sessão não é tratada como append-only.
 
 As funções de trigger novas usam `SECURITY INVOKER`, `search_path = ''` e referências schema-qualified. O Supabase live foi consultado apenas em modo read-only para concordância; nenhuma escrita ou DDL foi aplicada nele.
 
 Sangria, suprimento, caixa por operador, múltiplos caixas paralelos na mesma unidade, conciliação, DRE, ERP, Convênios/Faturas, resumo financeiro, frontend cutover e impressão permanecem fora desta subfase.
+
+### Financeiro — Saídas / Despesas
+
+Saídas opera sobre `financeiro_saidas`, no próprio banco tenant, sem livro paralelo. O estado canônico é `status`; `foi_pago` é derivado pelo PostgreSQL. A máquina de estados mínima permite correção somente enquanto `aberta`, efetivação `aberta -> paga` e cancelamento de `aberta` ou `paga` exclusivamente pelo fluxo formal de estorno.
+
+As rotas são:
+
+```text
+GET   /api/financeiro/saidas
+POST  /api/financeiro/saidas
+PATCH /api/financeiro/saidas/{id}
+POST  /api/financeiro/saidas/{id}/estorno
+```
+
+Não existe rota DELETE. O protocolo `SAI-AAAA-0000001` é gerado server-side usando `protocolo_sequence` e torna-se imutável. Campos de autoridade do servidor, como protocolo, `foi_pago` e `caixa_sessao_id`, são rejeitados na fronteira HTTP.
+
+PATCH e estorno usam transação e `FOR UPDATE`. Saída paga e cancelada ficam congeladas para edição normal. O estorno cria primeiro a entrada append-only em `financeiro_estornos` com `origem_tipo = 'saida'` e, na mesma transação, muda a Saída para `cancelada`; a linha original, valor, protocolo, datas e vínculo histórico do Caixa permanecem preservados.
+
+Saídas pagas em Dinheiro/PIX só são vinculadas automaticamente quando existe exatamente uma sessão de Caixa aberta no tenant, pois `financeiro_saidas` ainda não possui unidade própria. A subfase não inventa `unidade_id` nem expande Caixa por operador. Uma Saída estornada mantém o vínculo histórico, mas é excluída do fechamento por existir o estorno canônico.
+
+Leitura exige `visualizar_financeiro`; criar, corrigir, pagar e estornar exigem `gestao_financeira`. As invariantes críticas permanecem no PostgreSQL tenant: valor positivo, coerência de estado, protocolo/assinatura protegidos, terminais imutáveis, transição para cancelada condicionada a estorno e DELETE físico bloqueado.
+
+O contrato executável está em `docs/contracts/financeiro-saidas.json`; a descrição detalhada está em `docs/financeiro-saidas.md`. Nenhuma escrita ou DDL foi executada no Supabase live nesta subfase.
 
 ## Fronteira Platform ↔ Domain
 
