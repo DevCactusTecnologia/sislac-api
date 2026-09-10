@@ -53,12 +53,15 @@ if (! is_array($contracts)) {
 $contractNames = [];
 
 foreach ($contracts as $contract) {
+    $relations = $contract['relations'] ?? null;
+    $routines = $contract['routines'] ?? null;
+
     if (! is_array($contract)
         || ! is_string($contract['name'] ?? null)
-        || ! is_array($contract['relations'] ?? null)
-        || ! is_array($contract['routines'] ?? null)
-        || array_filter($contract['relations'], static fn (mixed $value): bool => ! is_string($value)) !== []
-        || array_filter($contract['routines'], static fn (mixed $value): bool => ! is_string($value)) !== []) {
+        || ! is_array($relations)
+        || ! is_array($routines)
+        || array_filter($relations, static fn (mixed $value): bool => is_string($value) === false) !== []
+        || array_filter($routines, static fn (mixed $value): bool => is_string($value) === false) !== []) {
         throw new RuntimeException('Contrato Supabase migrado inválido.');
     }
 
