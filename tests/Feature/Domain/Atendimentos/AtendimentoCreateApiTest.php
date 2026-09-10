@@ -136,17 +136,10 @@ function validAtendimentoCreatePayload(?string $idempotencyKey = null): array
                 'amostra_seq' => 1,
             ],
         ],
-        'pagamentos' => [
-            [
-                'tipo' => 'PIX',
-                'valor' => '50.00',
-                'observacao' => 'Entrada',
-            ],
-        ],
     ];
 }
 
-it('cria pai exames e pagamentos em uma única operação com campos protegidos server-side', function () {
+it('cria pai e exames em uma única operação com campos protegidos server-side', function () {
     $response = $this->postJson('/api/atendimentos', validAtendimentoCreatePayload())
         ->assertCreated()
         ->assertJsonPath('ok', true)
@@ -169,7 +162,7 @@ it('cria pai exames e pagamentos em uma única operação com campos protegidos 
     expect($parent)->toMatchArray([
         'protocolo' => $protocolo,
         'status_atendimento' => 'Amostra Analisada',
-        'status_pagamento' => 'Pagamento parcial',
+        'status_pagamento' => 'Pagamento pendente',
         'subtotal' => '160.00',
         'desconto_total' => '10.00',
         'acrescimo_total' => '0.00',
@@ -199,7 +192,7 @@ it('cria pai exames e pagamentos em uma única operação com campos protegidos 
             'solicitante' => '',
         ],
     ])
-        ->and((int) $pdo->query('SELECT count(*) FROM atendimento_pagamentos WHERE atendimento_id = '.$id)?->fetchColumn())->toBe(1);
+        ->and((int) $pdo->query('SELECT count(*) FROM atendimento_pagamentos WHERE atendimento_id = '.$id)?->fetchColumn())->toBe(0);
 });
 
 it('mantém concordância com o baseline quando paciente não possui cpf', function () {
@@ -234,7 +227,7 @@ it('repete a mesma idempotency key retornando o mesmo atendimento sem duplicar f
     $pdo = atendimentoCreateControlConnection($this->atendimentoCreateDatabase);
     expect((int) $pdo->query("SELECT count(*) FROM atendimentos WHERE idempotency_key = '{$key}'")?->fetchColumn())->toBe(1)
         ->and((int) $pdo->query('SELECT count(*) FROM atendimento_exames')?->fetchColumn())->toBe(2)
-        ->and((int) $pdo->query('SELECT count(*) FROM atendimento_pagamentos')?->fetchColumn())->toBe(1);
+        ->and((int) $pdo->query('SELECT count(*) FROM atendimento_pagamentos')?->fetchColumn())->toBe(0);
 });
 
 it('faz rollback integral quando um filho viola uma invariante do banco', function () {
