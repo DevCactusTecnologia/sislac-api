@@ -3,12 +3,22 @@
 namespace App\Http\Requests\Financeiro;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Str;
 
 final class ReversePacientePaymentRequest extends FormRequest
 {
     public function authorize(): bool
     {
         return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $motivo = $this->input('motivo');
+
+        if (is_string($motivo)) {
+            $this->merge(['motivo' => Str::squish($motivo)]);
+        }
     }
 
     /** @return array<string, mixed> */
