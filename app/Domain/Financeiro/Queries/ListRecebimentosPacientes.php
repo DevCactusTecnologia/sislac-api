@@ -90,12 +90,12 @@ final class ListRecebimentosPacientes
         $timezone = (string) config('app.timezone', 'UTC');
         $dateFrom = $filters['date_from'] ?? null;
         if (is_string($dateFrom) && $dateFrom !== '') {
-            $query->where('p.data', '>=', CarbonImmutable::parse($dateFrom, $timezone)->startOfDay());
+            $query->where('p.data', '>=', CarbonImmutable::parse($dateFrom, $timezone));
         }
 
         $dateTo = $filters['date_to'] ?? null;
         if (is_string($dateTo) && $dateTo !== '') {
-            $query->where('p.data', '<', CarbonImmutable::parse($dateTo, $timezone)->addDay()->startOfDay());
+            $query->where('p.data', '<=', CarbonImmutable::parse($dateTo, $timezone));
         }
 
         $cursorData = $filters['cursor_data'] ?? null;
