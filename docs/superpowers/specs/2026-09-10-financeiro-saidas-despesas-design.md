@@ -51,7 +51,9 @@ O cliente não poderá enviar `foi_pago` diretamente.
 
 - em `aberta`, deve permanecer `NULL`;
 - na transição para `paga`, recebe a data informada e validada quando explicitamente fornecida; na ausência, recebe `CURRENT_DATE` server-side;
-- em `cancelada`, o valor histórico de `data_pagamento` não precisa ser apagado para provar que a Saída chegou a ser paga; `foi_pago = false` e `status = 'cancelada'` determinam que não é mais movimento efetivo.
+- em `cancelada`, o valor histórico de `data_pagamento` é preservado quando a Saída já esteve paga; `foi_pago = false` e `status = 'cancelada'` determinam que ela não é mais movimento efetivo.
+
+Uma linha não pode simplesmente receber `status = 'cancelada'` por UPDATE direto. O PostgreSQL deve exigir a existência de `financeiro_estornos (origem_tipo='saida', origem_id=<id>)` para aceitar a transição para `cancelada`. Isso mantém cancelamento e trilha financeira inseparáveis mesmo fora da API.
 
 ## Protocolo
 
@@ -183,9 +185,11 @@ Regras:
 - exige motivo não vazio após normalização;
 - recusa segundo estorno;
 - aceita Saída `aberta` ou `paga`, reproduzindo o comportamento observado no Supabase live;
-- altera somente o estado necessário para cancelar a efetividade: `status = 'cancelada'` e `foi_pago = false`;
 - preserva valor, descrição, forma, datas, protocolo e vínculo histórico com Caixa;
-- cria uma linha em `financeiro_estornos` com `origem_tipo = 'saida'`, `origem_id`, `motivo`, `valor` e `criado_por`;
+- cria primeiro, na mesma transação, uma linha em `financeiro_estornos` com `origem_tipo = 'saida'`, `origem_id`, `motivo`, `valor` e `criado_por`;
+- depois altera `status = 'cancelada'` e `foi_pago = false`;
+- o trigger de estado só aceita essa transição porque o estorno correspondente já existe dentro da mesma transação;
+- qualquer falha posterior faz rollback tanto do estorno quanto da alteração da Saída;
 - a UNIQUE já existente em `(origem_tipo, origem_id)` continua sendo a defesa física contra estorno duplicado.
 
 Uma Saída estornada vinculada a um Caixa aberto ou fechado permanece com `caixa_sessao_id` para rastreabilidade, mas o cálculo do fechamento a exclui por existir `financeiro_estornos` de origem `saida`, conforme a fase Caixa já implementada.
@@ -201,14 +205,18 @@ Invariantes obrigatórias:
 - `valor > 0`;
 - status limitado a `aberta | paga | cancelada`;
 - sincronização de `status`/`foi_pago`;
-- `data_pagamento` obrigatória/equivalente quando `paga`;
-- Saída `paga` não aceita alteração de campos de negócio;
+- `data_pagamento` normalizada pelo estado: nula em `aberta`, preenchida em `paga` e preservada em `cancelada`;
+- criação direta em `cancelada` rejeitada;
+- transição direta para `cancelada` rejeitada sem estorno correspondente já persistido na mesma transação;
+- Saída `paga` não aceita alteração de campos de negócio, exceto a transição formal para `cancelada` acompanhada do estorno;
 - Saída `cancelada` não aceita reabertura ou alteração de campos de negócio;
 - `DELETE` físico continua bloqueado;
 - tentativa de vincular movimento a Caixa fechado continua bloqueada pelo contrato do Caixa;
 - `updated_at` é atualizado server-side.
 
-As funções novas devem usar `SECURITY INVOKER`, `SET search_path = ''` e nomes schema-qualified. Nenhum `SECURITY DEFINER` será introduzido nesta subfase.
+O trigger de normalização do estado deve ser único para `status`, `foi_pago` e `data_pagamento`. A migration também deve alinhar a função já existente `caixa_attach_saida()` para verificar `NEW.status = 'paga'` como autoridade de efetividade, em vez de depender de `NEW.foi_pago`; assim o vínculo do Caixa não depende de ordem alfabética entre triggers.
+
+As funções novas ou substituídas devem usar `SECURITY INVOKER`, `SET search_path = ''` e nomes schema-qualified. Nenhum `SECURITY DEFINER` será introduzido nesta subfase.
 
 ## Listagem
 
@@ -329,7 +337,11 @@ Controllers permanecem finos e mapeiam apenas exceções de domínio conhecidas.
 - assinatura não nula imutável;
 - valor zero/negativo rejeitado;
 - `status`/`foi_pago` coerentes em INSERT/UPDATE direto;
-- `paga` exige `data_pagamento` após normalização;
+- `paga` recebe `data_pagamento` quando ausente;
+- `aberta` não mantém `data_pagamento` arbitrária;
+- criação direta `cancelada` rejeitada;
+- UPDATE direto para `cancelada` sem `financeiro_estornos` rejeitado;
+- cancelamento com estorno correspondente permitido;
 - campos de negócio imutáveis depois de `paga`;
 - estado `cancelada` terminal;
 - DELETE físico bloqueado;
@@ -352,10 +364,12 @@ Ela deve:
 - adicionar função/trigger de protocolo `SAI-AAAA-NNNNNNN` usando `protocolo_sequence`;
 - proteger protocolo/assinatura;
 - reforçar `valor > 0` substituindo o check atual `valor >= 0`;
-- sincronizar estado efetivo (`status`, `foi_pago`, `data_pagamento`);
+- criar um único trigger de normalização de `status`, `foi_pago` e `data_pagamento`;
+- exigir estorno correspondente para transição a `cancelada`;
 - bloquear mutações de negócio após estado terminal;
+- substituir somente a definição de `caixa_attach_saida()` para consultar `status = 'paga'`, mantendo os triggers do Caixa existentes;
 - manter o bloqueio DELETE já existente;
-- atualizar `updated_at` server-side sem criar dois triggers concorrentes para a mesma responsabilidade.
+- criar uma única responsabilidade de `updated_at` para `financeiro_saidas`, pois a migration `000700` ainda não possui esse trigger.
 
 Antes de criar qualquer trigger novo, a implementação deverá revisar os triggers da migration `000700` e evitar duplicação de responsabilidade.
 
