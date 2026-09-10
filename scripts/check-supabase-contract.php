@@ -34,15 +34,46 @@ foreach ($required as $segments) {
     }
 }
 
-if ($data['version'] !== 2
+$expectedContracts = [
+    'pacientes',
+    'atendimentos',
+    'rotina',
+    'financeiro-core',
+    'financeiro-totais-atendimento',
+    'financeiro-caixa-operacional',
+    'financeiro-saidas',
+];
+
+$contracts = $data['migrated_contracts'];
+
+if (! is_array($contracts)) {
+    throw new RuntimeException('migrated_contracts inválido.');
+}
+
+$contractNames = [];
+
+foreach ($contracts as $contract) {
+    if (! is_array($contract)
+        || ! is_string($contract['name'] ?? null)
+        || ! is_array($contract['relations'] ?? null)
+        || ! is_array($contract['routines'] ?? null)
+        || array_filter($contract['relations'], static fn (mixed $value): bool => ! is_string($value)) !== []
+        || array_filter($contract['routines'], static fn (mixed $value): bool => ! is_string($value)) !== []) {
+        throw new RuntimeException('Contrato Supabase migrado inválido.');
+    }
+
+    $contractNames[] = $contract['name'];
+}
+
+if ($data['version'] !== 3
     || $data['frontend']['repository'] !== 'DevCactusTecnologia/sislacprivado'
     || ! is_string($data['frontend']['sha'])
     || preg_match('/\A[0-9a-f]{40}\z/', $data['frontend']['sha']) !== 1
     || $data['supabase']['project_ref'] !== 'eramenhnqcbyctyiqwlm'
     || $data['supabase']['postgres_major'] !== 17
     || $data['supabase']['runtime'] !== 'single-tenant'
-    || $data['migrated_contracts'] !== ['pacientes']) {
-    throw new RuntimeException('Manifesto Supabase não representa a baseline aprovada da Fase 0.');
+    || $contractNames !== $expectedContracts) {
+    throw new RuntimeException('Manifesto Supabase não representa os contratos concluídos aprovados.');
 }
 
 $expectedHash = (string) $data['sha256'];
@@ -76,4 +107,7 @@ if (! hash_equals($expectedHash, $actualHash)) {
     throw new RuntimeException('Hash do manifesto Supabase divergente.');
 }
 
-echo "OK — manifesto Supabase íntegro e determinístico.\n";
+echo sprintf(
+    "OK — manifesto Supabase íntegro: %d contratos migrados registrados.\n",
+    count($contractNames),
+);
