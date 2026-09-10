@@ -13,8 +13,8 @@ final class CreateFinanceiroSaidaController
     {
         $saida = $action->handle($request->validated());
 
-        return (new FinanceiroSaidaResource($saida))
-            ->response()
-            ->setStatusCode(201);
+        return response()->json([
+            'data' => (new FinanceiroSaidaResource($saida))->resolve($request),
+        ], 201);
     }
 }
