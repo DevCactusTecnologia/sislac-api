@@ -232,7 +232,7 @@ it('mantém pagamento em dinheiro sem vínculo quando não existe caixa aberto',
     $statement = $pdo->prepare('SELECT caixa_sessao_id FROM atendimento_pagamentos WHERE id = ?');
     $statement->execute([$paymentId]);
 
-    expect($statement->fetchColumn())->toBeFalse();
+    expect($statement->fetchColumn())->toBeNull();
 });
 
 it('fecha caixa com saldo calculado no servidor e ignora pagamento estornado', function () {
