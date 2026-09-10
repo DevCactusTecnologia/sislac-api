@@ -91,6 +91,20 @@ it('recusa valor de abertura negativo no banco', function () {
         ->toThrow(PDOException::class);
 });
 
+it('atualiza updated_at no banco ao alterar sessão', function () {
+    $pdo = caixaSchemaControlConnection($this->caixaSchemaDatabase);
+    $sessionId = (int) $pdo->query(<<<'SQL'
+        INSERT INTO caixa_sessoes (unidade_id, valor_abertura, updated_at)
+        VALUES ('und-001', 0, '2000-01-01 00:00:00+00')
+        RETURNING id
+    SQL)?->fetchColumn();
+
+    $pdo->exec("UPDATE caixa_sessoes SET observacoes = 'Atualizada' WHERE id = {$sessionId}");
+
+    expect((bool) $pdo->query("SELECT updated_at > '2000-01-01 00:00:00+00'::timestamptz FROM caixa_sessoes WHERE id = {$sessionId}")?->fetchColumn())
+        ->toBeTrue();
+});
+
 it('impede movimento explicitamente vinculado a sessão fechada', function () {
     $pdo = caixaSchemaControlConnection($this->caixaSchemaDatabase);
     $sessionId = (int) $pdo->query(<<<'SQL'
@@ -124,4 +138,16 @@ it('não permite delete físico de saída financeira', function () {
 
     expect(fn () => $pdo->exec("DELETE FROM financeiro_saidas WHERE protocolo = 'SAI-SCHEMA-001'"))
         ->toThrow(PDOException::class, 'use estorno');
+});
+
+it('não permite delete físico de sessão de caixa', function () {
+    $pdo = caixaSchemaControlConnection($this->caixaSchemaDatabase);
+    $sessionId = (int) $pdo->query(<<<'SQL'
+        INSERT INTO caixa_sessoes (unidade_id, valor_abertura)
+        VALUES ('und-001', 0)
+        RETURNING id
+    SQL)?->fetchColumn();
+
+    expect(fn () => $pdo->exec("DELETE FROM caixa_sessoes WHERE id = {$sessionId}"))
+        ->toThrow(PDOException::class, 'sessão de caixa não pode ser excluída');
 });
