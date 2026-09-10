@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Platform\Supabase\MigratedContractsLiveContract;
 use App\Platform\Supabase\PacientesLiveContract;
 use App\Platform\Supabase\SupabaseSource;
 use Illuminate\Console\Command;
@@ -13,8 +14,11 @@ final class CheckSupabaseLiveContract extends Command
 
     protected $description = 'Compara contratos migrados com o Supabase real em modo somente leitura';
 
-    public function handle(SupabaseSource $source, PacientesLiveContract $pacientes): int
-    {
+    public function handle(
+        SupabaseSource $source,
+        PacientesLiveContract $pacientes,
+        MigratedContractsLiveContract $migrated,
+    ): int {
         $config = config('database.connections.supabase_source');
 
         if (! is_array($config)
@@ -28,7 +32,11 @@ final class CheckSupabaseLiveContract extends Command
         }
 
         try {
-            $differences = $pacientes->check($source->connection());
+            $connection = $source->connection();
+            $differences = array_merge(
+                $migrated->check($connection),
+                $pacientes->check($connection),
+            );
         } catch (Throwable $exception) {
             report($exception);
             $this->error('Não foi possível consultar o Supabase em modo live/read-only.');
@@ -36,8 +44,10 @@ final class CheckSupabaseLiveContract extends Command
             return 2;
         }
 
+        $differences = array_values(array_unique($differences));
+
         if ($differences !== []) {
-            $this->error('Pacientes: divergente');
+            $this->error('Contratos Supabase migrados: divergentes');
 
             foreach ($differences as $difference) {
                 $this->line('- '.$difference);
@@ -46,7 +56,7 @@ final class CheckSupabaseLiveContract extends Command
             return self::FAILURE;
         }
 
-        $this->info('Pacientes: conforme');
+        $this->info('Contratos Supabase migrados: conformes');
 
         return self::SUCCESS;
     }
