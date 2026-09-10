@@ -24,6 +24,12 @@ final class ListRecebimentosPacientes
             ->join('atendimentos as a', 'a.id', '=', 'p.atendimento_id')
             ->where('a.status_atendimento', '<>', 'Cancelado')
             ->whereRaw("COALESCE(p.status_pagamento, 'efetuado') <> 'estornado'")
+            ->whereNotExists(function (Builder $estornos): void {
+                $estornos->selectRaw('1')
+                    ->from('financeiro_estornos as fe')
+                    ->where('fe.origem_tipo', 'pagamento')
+                    ->whereColumn('fe.origem_id', 'p.id');
+            })
             ->selectRaw(<<<'SQL'
                 p.id AS pagamento_id,
                 a.id AS atendimento_id,
@@ -32,13 +38,13 @@ final class ListRecebimentosPacientes
                 a.protocolo,
                 p.data,
                 a.paciente_nome AS cliente,
-                a.convenio_nome AS convenio,
+                COALESCE(NULLIF(a.convenio_nome, ''), 'Particular') AS convenio,
                 p.tipo AS payment,
                 p.valor::numeric(14,2) AS valor_total,
                 p.valor::numeric(14,2) AS valor,
                 p.observacao,
                 a.unidade_id,
-                p.status_pagamento
+                a.status_pagamento
             SQL);
 
         $this->applyFilters($query, $filters);
