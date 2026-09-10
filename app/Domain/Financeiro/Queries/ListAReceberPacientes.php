@@ -21,7 +21,7 @@ final class ListAReceberPacientes
         $connection = DB::connection('tenant');
 
         $exames = $connection->table('atendimento_exames')
-            ->selectRaw('atendimento_id, SUM(valor)::numeric(14,2) AS valor_total, COUNT(*)::int AS qtd_exames')
+            ->selectRaw('atendimento_id, SUM(valor)::numeric(14,2) AS valor_total')
             ->where('status', '<>', 'cancelado')
             ->whereRaw("COALESCE(cobranca_destino, 'paciente') <> 'convenio'")
             ->groupBy('atendimento_id');
@@ -35,7 +35,7 @@ final class ListAReceberPacientes
             ->leftJoinSub($exames, 'e', 'e.atendimento_id', '=', 'a.id')
             ->leftJoinSub($pagamentos, 'p', 'p.atendimento_id', '=', 'a.id')
             ->where('a.status_atendimento', '<>', 'Cancelado')
-            ->whereRaw('(COALESCE(e.valor_total, 0) - COALESCE(p.valor_pago, 0)) > 0')
+            ->whereRaw('(COALESCE(e.valor_total, 0) - COALESCE(p.valor_pago, 0)) > 0.009')
             ->selectRaw(<<<'SQL'
                 a.id,
                 a.id AS ref_id,
@@ -52,7 +52,7 @@ final class ListAReceberPacientes
                 COALESCE(p.valor_pago, 0)::numeric(14,2) AS valor_pago,
                 (COALESCE(e.valor_total, 0) - COALESCE(p.valor_pago, 0))::numeric(14,2) AS saldo,
                 CASE WHEN COALESCE(p.valor_pago, 0) > 0 THEN 'parcial' ELSE 'pendente' END AS status,
-                COALESCE(e.qtd_exames, 0)::int AS qtd_exames,
+                0::int AS qtd_exames,
                 1::int AS qtd_pacientes
             SQL);
 
@@ -98,12 +98,12 @@ final class ListAReceberPacientes
         $timezone = (string) config('app.timezone', 'UTC');
         $dateFrom = $filters['date_from'] ?? null;
         if (is_string($dateFrom) && $dateFrom !== '') {
-            $query->where('a.data', '>=', CarbonImmutable::parse($dateFrom, $timezone)->startOfDay());
+            $query->where('a.data', '>=', CarbonImmutable::parse($dateFrom, $timezone));
         }
 
         $dateTo = $filters['date_to'] ?? null;
         if (is_string($dateTo) && $dateTo !== '') {
-            $query->where('a.data', '<', CarbonImmutable::parse($dateTo, $timezone)->addDay()->startOfDay());
+            $query->where('a.data', '<=', CarbonImmutable::parse($dateTo, $timezone));
         }
 
         $status = $filters['status'] ?? null;
