@@ -12,6 +12,7 @@ enum TenantPermission: string
     case EditAppointment = 'editar_atendimento';
     case CancelAppointment = 'cancelar_atendimento';
     case RegisterPayment = 'registrar_pagamento';
+    case FinancialManagement = 'gestao_financeira';
     case RegisterCollection = 'registrar_coleta';
     case AnalyzeSample = 'analisar_amostra';
     case SystemSettings = 'configuracoes_sistema';
