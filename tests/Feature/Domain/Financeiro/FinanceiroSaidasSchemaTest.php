@@ -90,7 +90,7 @@ function insertSchemaSaida(PDO $pdo, array $overrides = []): array
         $row['tipo_despesa'],
         $row['destino_pagamento'],
         $row['status'],
-        $row['foi_pago'],
+        $row['foi_pago'] ? 'true' : 'false',
         $row['data_pagamento'],
         $row['forma_pagamento'],
     ]);
@@ -172,6 +172,24 @@ it('normaliza status aberta removendo sinalização de pagamento', function () {
         ->and($row['data_pagamento'] ?? null)->toBeNull();
 });
 
+it('vincula ao caixa usando status paga como autoridade mesmo se foi_pago chegar falso', function () {
+    $pdo = saidasSchemaControlConnection($this->saidasSchemaDatabase);
+    $sessionId = (int) $pdo->query(<<<'SQL'
+        INSERT INTO caixa_sessoes (unidade_id, valor_abertura)
+        VALUES ('und-001', 0)
+        RETURNING id
+    SQL)?->fetchColumn();
+
+    $row = insertSchemaSaida($pdo, [
+        'status' => 'paga',
+        'foi_pago' => false,
+        'forma_pagamento' => 'PIX',
+    ]);
+
+    expect((int) ($row['caixa_sessao_id'] ?? 0))->toBe($sessionId)
+        ->and($row['foi_pago'] ?? null)->toBeTrue();
+});
+
 it('permite apenas a transição aberta para paga como atualização operacional', function () {
     $pdo = saidasSchemaControlConnection($this->saidasSchemaDatabase);
     $row = insertSchemaSaida($pdo);
@@ -238,6 +256,16 @@ it('permite cancelamento formal com estorno na mesma transação e mantém estad
     $statement = $pdo->prepare("UPDATE financeiro_saidas SET status = 'aberta' WHERE id = ?");
     expect(fn () => $statement->execute([(int) $row['id']]))
         ->toThrow(PDOException::class, 'saída financeira terminal é imutável');
+});
+
+it('mantém updated_at sob autoridade do PostgreSQL', function () {
+    $pdo = saidasSchemaControlConnection($this->saidasSchemaDatabase);
+    $row = insertSchemaSaida($pdo);
+    $pdo->exec("UPDATE financeiro_saidas SET updated_at = '2000-01-01 00:00:00+00', descricao = 'Atualizada' WHERE id = ".(int) $row['id']);
+
+    expect((bool) $pdo->query(
+        "SELECT updated_at > '2000-01-01 00:00:00+00'::timestamptz FROM financeiro_saidas WHERE id = ".(int) $row['id'],
+    )?->fetchColumn())->toBeTrue();
 });
 
 it('mantém delete físico bloqueado', function () {
