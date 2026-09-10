@@ -59,7 +59,7 @@ final class ListFinanceiroSaidas
         $last = $hasMore ? $items->last() : null;
 
         return [
-            'data' => $items->all(),
+            'data' => array_values($items->all()),
             'next_cursor' => $last instanceof FinanceiroSaida ? $this->encodeCursor($last) : null,
         ];
     }
