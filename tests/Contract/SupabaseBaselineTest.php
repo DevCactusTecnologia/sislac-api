@@ -16,7 +16,7 @@ it('descreve o gate do CI como integridade offline, não conformidade live', fun
         ->not->toContain('Contrato Supabase ↔ Laravel');
 });
 
-it('fixa a baseline na main atual e somente nos contratos já migrados', function () {
+it('fixa a baseline no frontend validado e somente nos contratos já migrados', function () {
     $manifest = json_decode(
         (string) file_get_contents(base_path('docs/contracts/supabase-baseline.json')),
         true,
@@ -24,7 +24,7 @@ it('fixa a baseline na main atual e somente nos contratos já migrados', functio
     );
 
     expect($manifest['version'])->toBe(3)
-        ->and($manifest['frontend']['sha'])->toBe('57cc9be96703a41b207d530088369da1cc23cd94')
+        ->and($manifest['frontend']['sha'])->toBe('5f3adbab91631e2b459bb83e20ae6eef79b5f8b6')
         ->and($manifest['supabase']['postgres_major'])->toBe(17)
         ->and($manifest['supabase']['runtime'])->toBe('single-tenant')
         ->and(array_column($manifest['migrated_contracts'], 'name'))->toBe([
