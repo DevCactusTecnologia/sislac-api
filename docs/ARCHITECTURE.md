@@ -1,6 +1,6 @@
 # Arquitetura — SISLAC API
 
-A especificação normativa desta migração é `docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`, complementada pela Fase 0 aprovada em `docs/superpowers/specs/2026-09-08-fase-0-saneamento-fundacao-design.md`. A onda de Rotina / Fluxo Operacional é especificada em `docs/superpowers/specs/2026-09-09-rotina-fluxo-operacional-design.md`. O contrato da subfase Financeiro Core está em `docs/contracts/financeiro-core.json` e sua descrição em `docs/financeiro-core.md`. Documentação oficial Laravel 13, PostgreSQL, Supabase e `stancl/tenancy` prevalece sobre comportamento legado.
+A especificação normativa desta migração é `docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`, complementada pela Fase 0 aprovada em `docs/superpowers/specs/2026-09-08-fase-0-saneamento-fundacao-design.md`. A onda de Rotina / Fluxo Operacional é especificada em `docs/superpowers/specs/2026-09-09-rotina-fluxo-operacional-design.md`. O contrato da subfase Financeiro Core está em `docs/contracts/financeiro-core.json` e sua descrição em `docs/financeiro-core.md`. O hardening de totais canônicos está em `docs/contracts/financeiro-totais-atendimento.json` e `docs/financeiro-totais-atendimento.md`. Documentação oficial Laravel 13, PostgreSQL, Supabase e `stancl/tenancy` prevalece sobre comportamento legado.
 
 ## Objetivo
 
@@ -181,13 +181,32 @@ Registro de pagamento exige `registrar_pagamento`, bloqueia o atendimento com `F
 
 Estorno exige `gestao_financeira`, bloqueia o pagamento com `FOR UPDATE`, preserva a linha original, altera somente `status_pagamento` para `estornado` e cria uma linha única em `financeiro_estornos`. O livro de estornos é append-only. A recepção mantém `registrar_pagamento`, mas não recebe `gestao_financeira` implicitamente.
 
-Pagamento efetivo passa a ser histórico: campos de negócio são imutáveis, `DELETE` físico é rejeitado e a única atualização permitida é a transição irreversível para `estornado`. Por consequência, `PATCH /api/atendimentos/{id}` exige que o campo `pagamentos` esteja ausente e `UpdateAtendimento` não substitui mais pagamentos.
+Pagamento efetivo passa a ser histórico: campos de negócio são imutáveis, `DELETE` físico é rejeitado e a única atualização permitida é a transição irreversível para `estornado`. Por consequência, `POST /api/atendimentos` e `PATCH /api/atendimentos/{id}` exigem que o campo `pagamentos` esteja ausente; criação e edição de Atendimento não são portas alternativas para mutação financeira.
 
 As funções de trigger novas usam `SECURITY INVOKER`, `search_path = ''` e nomes schema-qualified. Não há `SECURITY DEFINER`, Redis, fila, event bus ou novo serviço para esta subfase.
 
 A divergência conhecida do baseline está documentada em `docs/financeiro-core.md`: `financeiro_a_receber_v2` live ainda soma exame cancelado cobrado do paciente, enquanto `recompute_atendimento_completo` já o exclui. O Laravel segue a invariante canônica do recompute e não replica o defeito.
 
 Convênios/faturas, Saídas, Caixa, resumo financeiro e cutover do frontend continuam fora do Financeiro Core.
+
+### Financeiro — Totais Canônicos do Atendimento
+
+`subtotal`, `desconto_total`, `acrescimo_total` e `total` são valores derivados do agregado de Atendimentos e pertencem ao PostgreSQL tenant. O calculador canônico continua sendo exclusivamente `public.recompute_atendimento_completo`; esta subfase não cria cálculo paralelo em PHP.
+
+```text
+subtotal        = Σ COALESCE(valor_original, valor) dos exames não cancelados
+total           = Σ valor dos exames não cancelados
+desconto_total  = MAX(subtotal - total, 0)
+acrescimo_total = MAX(total - subtotal, 0)
+```
+
+Os quatro campos precisam estar ausentes em `POST /api/atendimentos` e `PATCH /api/atendimentos/{id}`. O cliente lê os totais persistidos por `AtendimentoResource`, mas não os fornece como autoridade.
+
+`atendimento_exames.valor_original` pode ser definido na criação do exame e torna-se imutável depois de não nulo. A proteção PostgreSQL preserva silenciosamente o valor anterior em tentativa posterior de alteração, reproduzindo a semântica verificada no Supabase live. Exames cancelados permanecem fora de subtotal e total.
+
+A migration dessa proteção usa `SECURITY INVOKER`, `search_path = ''` e referências schema-qualified. Nenhuma escrita é realizada no Supabase live para esta subfase.
+
+Convênios/faturas, Saídas, Caixa, resumo financeiro e cutover do frontend permanecem fora deste hardening.
 
 ## Fronteira Platform ↔ Domain
 
