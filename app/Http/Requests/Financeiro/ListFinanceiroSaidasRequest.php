@@ -23,7 +23,7 @@ final class ListFinanceiroSaidasRequest extends FormRequest
             'date_from' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'date_to' => ['sometimes', 'nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
             'limit' => ['sometimes', 'integer', 'between:1,100'],
-            'cursor' => ['sometimes', 'nullable', 'string', 'max:512', $this->validCursor(...)],
+            'cursor' => ['sometimes', 'nullable', 'string', 'max:512', $this->validCursor()],
         ];
     }
 
