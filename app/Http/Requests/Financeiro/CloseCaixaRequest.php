@@ -25,6 +25,17 @@ final class CloseCaixaRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'sessao_id' => ['missing'],
+            'unidade_id' => ['missing'],
+            'valor_abertura' => ['missing'],
+            'valor_fechamento' => ['missing'],
+            'entradas_dinheiro' => ['missing'],
+            'entradas_pix' => ['missing'],
+            'saidas' => ['missing'],
+            'saldo_final' => ['missing'],
+            'status' => ['missing'],
+            'fechada_em' => ['missing'],
+            'fechado_por' => ['missing'],
             'observacoes' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ];
     }
