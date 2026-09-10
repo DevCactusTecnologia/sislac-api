@@ -6,6 +6,10 @@ use App\Http\Controllers\Atendimentos\ShowAtendimentoByProtocoloController;
 use App\Http\Controllers\Atendimentos\ShowAtendimentoController;
 use App\Http\Controllers\Atendimentos\StoreAtendimentoController;
 use App\Http\Controllers\Atendimentos\UpdateAtendimentoController;
+use App\Http\Controllers\Financeiro\ListAReceberPacientesController;
+use App\Http\Controllers\Financeiro\ListRecebimentosPacientesController;
+use App\Http\Controllers\Financeiro\RegisterPacientePaymentController;
+use App\Http\Controllers\Financeiro\ReversePacientePaymentController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\Pacientes\CreatePacienteController;
 use App\Http\Controllers\Pacientes\ListPacientesController;
@@ -57,6 +61,24 @@ Route::middleware(['supabase.auth', 'tenant'])
     ->patch('/atendimentos/{id}', UpdateAtendimentoController::class)
     ->whereNumber('id')
     ->name('atendimentos.update');
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_atendimentos'])
+    ->get('/financeiro/a-receber/pacientes', ListAReceberPacientesController::class)
+    ->name('financeiro.a-receber.pacientes');
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_atendimentos'])
+    ->get('/financeiro/recebimentos/pacientes', ListRecebimentosPacientesController::class)
+    ->name('financeiro.recebimentos.pacientes');
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:registrar_pagamento'])
+    ->post('/financeiro/atendimentos/{id}/pagamentos', RegisterPacientePaymentController::class)
+    ->whereNumber('id')
+    ->name('financeiro.pagamentos.store');
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financeira'])
+    ->post('/financeiro/pagamentos/{id}/estorno', ReversePacientePaymentController::class)
+    ->whereNumber('id')
+    ->name('financeiro.pagamentos.estorno');
 
 Route::middleware(['supabase.auth', 'tenant'])
     ->get('/rotina/config', ShowRotinaConfigController::class)
