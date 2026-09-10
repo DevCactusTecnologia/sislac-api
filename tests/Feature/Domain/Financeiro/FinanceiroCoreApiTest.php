@@ -87,7 +87,7 @@ function financeiroCoreControlConnection(?string $database = null): PDO
 }
 
 /**
- * @param list<array{nome:string,valor:string,status?:string,destino?:string}> $exames
+ * @param  list<array{nome:string,valor:string,status?:string,destino?:string}>  $exames
  * @return array{id:int,protocolo:string}
  */
 function financeiroCoreCreateAtendimento(PDO $pdo, array $exames): array
