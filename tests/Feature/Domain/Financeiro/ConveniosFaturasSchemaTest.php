@@ -133,7 +133,7 @@ it('cria tabelas canônicas sem tenant_id e semeia Particular', function () {
           AND column_name = 'tenant_id'
     SQL)?->fetchColumn())->toBe(0);
 
-    $particular = $pdo->query("SELECT id, nome, ativo FROM convenios WHERE id = 0")?->fetch(PDO::FETCH_ASSOC);
+    $particular = $pdo->query('SELECT id, nome, ativo FROM convenios WHERE id = 0')?->fetch(PDO::FETCH_ASSOC);
 
     expect($particular)->toBeArray()
         ->and((int) ($particular['id'] ?? -1))->toBe(0)
@@ -144,7 +144,7 @@ it('cria tabelas canônicas sem tenant_id e semeia Particular', function () {
 it('protege o convênio Particular contra renomear desativar e excluir', function () {
     $pdo = conveniosSchemaControlConnection($this->conveniosSchemaDatabase);
 
-    expect(fn () => $pdo->exec("UPDATE convenios SET nome = 'Outro' WHERE id = 0"))
+    expect(fn () => $pdo->exec('UPDATE convenios SET nome = \'Outro\' WHERE id = 0'))
         ->toThrow(PDOException::class, 'Particular');
     expect(fn () => $pdo->exec('UPDATE convenios SET ativo = false WHERE id = 0'))
         ->toThrow(PDOException::class, 'Particular');
