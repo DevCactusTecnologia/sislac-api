@@ -56,6 +56,7 @@ final class MembershipAuthorizer
                 TenantPermission::ViewPatients,
                 TenantPermission::ViewAppointments,
                 TenantPermission::RegisterPayment,
+                TenantPermission::ViewFinance,
                 TenantPermission::FinancialManagement,
             ], true),
             default => false,
