@@ -70,10 +70,7 @@ final class ListRecebimentosPacientes
         ];
     }
 
-    /**
-     * @param  Builder  $query
-     * @param  array<string, mixed>  $filters
-     */
+    /** @param  array<string, mixed>  $filters */
     private function applyFilters(Builder $query, array $filters): void
     {
         $search = trim((string) ($filters['search'] ?? ''));
