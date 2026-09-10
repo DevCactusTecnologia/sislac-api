@@ -4,8 +4,6 @@ namespace App\Domain\Atendimentos\Actions;
 
 use App\Domain\Atendimentos\Models\Atendimento;
 use App\Domain\Atendimentos\Models\AtendimentoExame;
-use App\Domain\Atendimentos\Models\AtendimentoPagamento;
-use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -32,10 +30,6 @@ final class UpdateAtendimento
 
             if (array_key_exists('exames', $payload)) {
                 $this->replaceExames($atendimento, $payload['exames']);
-            }
-
-            if (array_key_exists('pagamentos', $payload)) {
-                $this->replacePagamentos($atendimento, $payload['pagamentos']);
             }
 
             if (($payload['cancelar'] ?? false) === true) {
@@ -236,44 +230,6 @@ final class UpdateAtendimento
     private function normalizeExamName(string $name): string
     {
         return Str::lower(Str::squish($name));
-    }
-
-    private function replacePagamentos(Atendimento $atendimento, mixed $rows): void
-    {
-        if (! is_array($rows)) {
-            return;
-        }
-
-        $hasUnmigratedDependency = $atendimento->pagamentos()
-            ->where(function ($query): void {
-                $query->whereNotNull('caixa_sessao_id')
-                    ->orWhere('status_pagamento', '<>', 'efetuado');
-            })
-            ->exists();
-
-        if ($hasUnmigratedDependency) {
-            throw new DomainException('Pagamento vinculado a Caixa/estorno ainda não pode ser alterado nesta onda.');
-        }
-
-        $atendimento->pagamentos()->delete();
-
-        foreach ($rows as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-
-            $attributes = $this->only($row, [
-                'tipo',
-                'valor',
-                'data',
-                'observacao',
-            ]);
-            $attributes['status_pagamento'] = 'efetuado';
-
-            $pagamento = new AtendimentoPagamento;
-            $pagamento->fill($attributes);
-            $atendimento->pagamentos()->save($pagamento);
-        }
     }
 
     /** @param array<string, mixed> $payload */
