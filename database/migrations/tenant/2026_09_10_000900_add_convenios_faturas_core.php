@@ -181,7 +181,7 @@ return new class extends Migration
             SET search_path = ''
             AS $$
             DECLARE
-                v_ano integer := pg_catalog.extract(year FROM pg_catalog.clock_timestamp())::integer;
+                v_ano integer := pg_catalog.date_part('year', pg_catalog.clock_timestamp())::integer;
                 v_numero bigint;
                 v_codigo text;
             BEGIN
@@ -256,7 +256,7 @@ return new class extends Migration
                  WHERE i.fatura_id = NEW.id;
 
                 NEW.subtotal := v_subtotal;
-                NEW.total := pg_catalog.greatest(v_subtotal - NEW.desconto, 0)::numeric(14, 2);
+                NEW.total := GREATEST(v_subtotal - NEW.desconto, 0)::numeric(14, 2);
 
                 RETURN NEW;
             END;
