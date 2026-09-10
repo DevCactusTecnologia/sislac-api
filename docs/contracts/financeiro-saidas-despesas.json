@@ -1,0 +1,143 @@
+{
+  "contract": "financeiro-saidas-despesas",
+  "version": 1,
+  "captured_at": "2026-09-10",
+  "scope": [
+    "crud-nao-destrutivo-de-saidas",
+    "estados-aberta-paga-cancelada",
+    "estorno-formal",
+    "integracao-com-caixa",
+    "listagem-filtrada-com-cursor"
+  ],
+  "authority": {
+    "database": "tenant-postgresql",
+    "tenant_id_duplicated_inside_tenant_database": false,
+    "status_field": "status",
+    "protocol_generated_server_side": true,
+    "physical_delete": false
+  },
+  "states": [
+    "aberta",
+    "paga",
+    "cancelada"
+  ],
+  "state_machine": {
+    "create_allowed": [
+      "aberta",
+      "paga"
+    ],
+    "update_allowed_when_current_status": [
+      "aberta"
+    ],
+    "direct_update_transitions": [
+      "aberta->aberta",
+      "aberta->paga"
+    ],
+    "terminal_for_edit": [
+      "paga",
+      "cancelada"
+    ],
+    "cancel_requires_estorno": true,
+    "second_estorno": "409"
+  },
+  "server_owned_fields": [
+    "id",
+    "protocolo",
+    "assinatura_protocolo",
+    "foi_pago",
+    "caixa_sessao_id",
+    "created_at",
+    "updated_at"
+  ],
+  "http": {
+    "GET /api/financeiro/saidas": {
+      "permission": "visualizar_financeiro",
+      "filters": [
+        "search",
+        "status",
+        "date_from",
+        "date_to"
+      ],
+      "cursor": [
+        "data",
+        "id"
+      ],
+      "order": [
+        "data DESC",
+        "id DESC"
+      ],
+      "max_limit": 100
+    },
+    "POST /api/financeiro/saidas": {
+      "permission": "gestao_financeira"
+    },
+    "PATCH /api/financeiro/saidas/{id}": {
+      "permission": "gestao_financeira"
+    },
+    "POST /api/financeiro/saidas/{id}/estorno": {
+      "permission": "gestao_financeira",
+      "motivo_required": true
+    },
+    "DELETE /api/financeiro/saidas/{id}": null
+  },
+  "estorno": {
+    "ledger": "financeiro_estornos",
+    "origem_tipo": "saida",
+    "append_only": true,
+    "preserves_original_row": true,
+    "transaction": true,
+    "pessimistic_lock": true,
+    "insert_before_cancel_transition": true
+  },
+  "caixa": {
+    "eligible_payment_methods": [
+      "Dinheiro",
+      "PIX"
+    ],
+    "authority_field": "status",
+    "eligible_status": "paga",
+    "auto_attach_when_single_open_session_exists": true,
+    "cancelled_output_counted_in_close": false,
+    "historical_caixa_sessao_id_preserved_after_estorno": true
+  },
+  "database_invariants": {
+    "valor_gt_zero": true,
+    "protocol_immutable": true,
+    "signature_immutable_after_non_null": true,
+    "terminal_business_fields_immutable": true,
+    "direct_cancel_without_estorno_blocked": true,
+    "physical_delete_blocked": true,
+    "new_trigger_functions_security": "SECURITY INVOKER",
+    "new_trigger_functions_search_path": "empty",
+    "schema_qualified_database_references": true
+  },
+  "intentional_divergences": {
+    "protocol_hmac": "not-implemented-in-this-subphase",
+    "signature_field": "server-owned-null-until-dedicated-signature-phase"
+  },
+  "sources": {
+    "supabase_live": {
+      "project": "eramenhnqcbyctyiqwlm",
+      "access": "read-only-conformance",
+      "writes_performed_in_this_subphase": false
+    },
+    "laravel_base": {
+      "repository": "DevCactusTecnologia/sislac-api",
+      "commit": "8c563881ceb21dcf842b5facd26b75ee4206bce9",
+      "phase": "financeiro-caixa-operacional"
+    }
+  },
+  "out_of_scope": [
+    "sangria",
+    "suprimento",
+    "centro-de-custo",
+    "conciliacao-bancaria",
+    "dre",
+    "erp",
+    "convenios-faturas",
+    "resumo-financeiro",
+    "frontend-cutover",
+    "impressao-ui",
+    "protocol-hmac"
+  ]
+}

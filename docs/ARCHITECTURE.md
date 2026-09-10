@@ -1,6 +1,6 @@
 # Arquitetura — SISLAC API
 
-A especificação normativa desta migração é `docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`, complementada pela Fase 0 aprovada em `docs/superpowers/specs/2026-09-08-fase-0-saneamento-fundacao-design.md`. A onda de Rotina / Fluxo Operacional é especificada em `docs/superpowers/specs/2026-09-09-rotina-fluxo-operacional-design.md`. O contrato da subfase Financeiro Core está em `docs/contracts/financeiro-core.json` e sua descrição em `docs/financeiro-core.md`. O hardening de totais canônicos está em `docs/contracts/financeiro-totais-atendimento.json` e `docs/financeiro-totais-atendimento.md`. O Caixa Operacional está em `docs/contracts/financeiro-caixa-operacional.json` e `docs/financeiro-caixa-operacional.md`. Documentação oficial Laravel 13, PostgreSQL, Supabase e `stancl/tenancy` prevalece sobre comportamento legado.
+A especificação normativa desta migração é `docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`, complementada pela Fase 0 aprovada em `docs/superpowers/specs/2026-09-08-fase-0-saneamento-fundacao-design.md`. A onda de Rotina / Fluxo Operacional é especificada em `docs/superpowers/specs/2026-09-09-rotina-fluxo-operacional-design.md`. O contrato da subfase Financeiro Core está em `docs/contracts/financeiro-core.json` e sua descrição em `docs/financeiro-core.md`. O hardening de totais canônicos está em `docs/contracts/financeiro-totais-atendimento.json` e `docs/financeiro-totais-atendimento.md`. O Caixa Operacional está em `docs/contracts/financeiro-caixa-operacional.json` e `docs/financeiro-caixa-operacional.md`. Saídas e Despesas estão em `docs/contracts/financeiro-saidas-despesas.json` e `docs/financeiro-saidas-despesas.md`. Documentação oficial Laravel 13, PostgreSQL, Supabase e `stancl/tenancy` prevalece sobre comportamento legado.
 
 ## Objetivo
 
@@ -104,7 +104,7 @@ Dados clínicos permanecem nos bancos tenant, nunca duplicados no central.
 
 ## Domínio do laboratório
 
-`app/Domain` contém as regras que operam no banco dedicado do laboratório. Pacientes é a primeira onda concluída. Atendimentos, Rotina / Fluxo Operacional, Financeiro Core, Totais Canônicos e Caixa Operacional estão implementados em branches encadeadas e permanecem isolados do `main` e do cutover do frontend até que as ondas dependentes e seus gates sejam concluídos.
+`app/Domain` contém as regras que operam no banco dedicado do laboratório. Pacientes é a primeira onda concluída. Atendimentos, Rotina / Fluxo Operacional, Financeiro Core, Totais Canônicos, Caixa Operacional e Saídas/Despesas estão implementados em branches encadeadas e permanecem isolados do `main` e do cutover do frontend até que as ondas dependentes e seus gates sejam concluídos.
 
 ### Atendimentos
 
@@ -235,6 +235,37 @@ Pagamentos estornados não entram nas entradas. Saídas só são descontadas qua
 As funções de trigger novas usam `SECURITY INVOKER`, `search_path = ''` e referências schema-qualified. O Supabase live foi consultado apenas em modo read-only para concordância; nenhuma escrita ou DDL foi aplicada nele.
 
 Sangria, suprimento, caixa por operador, múltiplos caixas paralelos na mesma unidade, conciliação, DRE, ERP, Convênios/Faturas, resumo financeiro, frontend cutover e impressão permanecem fora desta subfase.
+
+### Financeiro — Saídas e Despesas
+
+A subfase seguinte ao Caixa promove `financeiro_saidas` de dependência estrutural para módulo operacional mínimo, sem criar livro paralelo ou ampliar o Financeiro para ERP. A autoridade continua no PostgreSQL tenant.
+
+As rotas são:
+
+```text
+GET   /api/financeiro/saidas
+POST  /api/financeiro/saidas
+PATCH /api/financeiro/saidas/{id}
+POST  /api/financeiro/saidas/{id}/estorno
+```
+
+Leitura exige `visualizar_financeiro`; criação, correção/efetivação e estorno exigem `gestao_financeira`. Não existe endpoint DELETE.
+
+Os estados canônicos são `aberta`, `paga` e `cancelada`. POST pode criar Saída aberta ou paga. PATCH só opera quando o estado atual é `aberta` e permite a transição `aberta -> paga`. Estados `paga` e `cancelada` são terminais para edição. Cancelamento só acontece via estorno formal.
+
+`id`, `protocolo`, `assinatura_protocolo`, `foi_pago`, `caixa_sessao_id`, `created_at` e `updated_at` são server-owned. O PostgreSQL gera o protocolo, deriva `foi_pago`/`data_pagamento`, protege protocolo/assinatura e impede mutação dos campos de negócio em estados terminais.
+
+O estorno bloqueia a Saída com `FOR UPDATE`, cria primeiro a linha append-only em `financeiro_estornos` com `origem_tipo = 'saida'` e somente então altera o estado para `cancelada`, tudo na mesma transação. A ordem satisfaz o trigger que bloqueia cancelamento sem estorno. Segundo estorno retorna conflito e a linha original nunca é apagada.
+
+Saídas pagas em `Dinheiro` ou `PIX` podem ser vinculadas automaticamente ao Caixa elegível. Se uma Saída vinculada for estornada, `caixa_sessao_id` permanece como histórico, mas o fechamento ignora o valor cancelado.
+
+A listagem canônica usa `data DESC, id DESC`, filtros de busca/status/período e cursor composto `(data, id)`, com limite máximo 100. A busca cobre protocolo, descrição, tipo de despesa e destino do pagamento.
+
+A migration `2026_09_10_000800_harden_financeiro_saidas.php` mantém `valor > 0`, proteção de estados, vínculo de Caixa e timestamps no banco. Suas novas funções usam `SECURITY INVOKER`, `search_path = ''` e referências schema-qualified.
+
+O Supabase live permanece somente como baseline read-only; nenhuma escrita ou DDL foi aplicada nele nesta subfase. `assinatura_protocolo` continua reservada ao servidor, mas a assinatura HMAC não é introduzida nesta onda.
+
+Sangria, suprimento, centro de custo, conciliação, DRE, ERP, Convênios/Faturas, resumo financeiro, frontend cutover, impressão/UI e HMAC de protocolo permanecem fora do escopo.
 
 ## Fronteira Platform ↔ Domain
 
