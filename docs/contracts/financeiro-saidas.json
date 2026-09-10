@@ -1,0 +1,239 @@
+{
+  "contract": "financeiro-saidas",
+  "version": 1,
+  "captured_at": "2026-09-10",
+  "principle": "Frontend lê. Backend calcula. Nada é destrutivo.",
+  "scope": [
+    "listar-saidas",
+    "criar-saida",
+    "corrigir-saida-aberta",
+    "efetivar-pagamento",
+    "estorno-formal",
+    "integracao-caixa"
+  ],
+  "authority": {
+    "database": "tenant-postgresql",
+    "table": "public.financeiro_saidas",
+    "canonical_state_field": "status",
+    "derived_paid_field": "foi_pago",
+    "reversal_book": "public.financeiro_estornos",
+    "tenant_id_duplicated_inside_tenant_database": false
+  },
+  "http": {
+    "GET /api/financeiro/saidas": {
+      "permission": "visualizar_financeiro",
+      "operation": "read-only-list"
+    },
+    "POST /api/financeiro/saidas": {
+      "permission": "gestao_financeira",
+      "operation": "create"
+    },
+    "PATCH /api/financeiro/saidas/{id}": {
+      "permission": "gestao_financeira",
+      "operation": "edit-open-or-pay"
+    },
+    "POST /api/financeiro/saidas/{id}/estorno": {
+      "permission": "gestao_financeira",
+      "operation": "formal-reversal"
+    },
+    "DELETE /api/financeiro/saidas/{id}": {
+      "exposed": false
+    }
+  },
+  "state_machine": {
+    "states": [
+      "aberta",
+      "paga",
+      "cancelada"
+    ],
+    "regular_transitions": [
+      "aberta->paga"
+    ],
+    "reversal_transitions": [
+      "aberta->cancelada",
+      "paga->cancelada"
+    ],
+    "paid_terminal_for_regular_edit": true,
+    "cancelled_terminal": true,
+    "cancelled_requires_canonical_reversal": true
+  },
+  "protocol": {
+    "server_owned": true,
+    "format": "SAI-AAAA-0000001",
+    "year_source": "data",
+    "sequence": "public.protocolo_sequence",
+    "immutable_after_create": true
+  },
+  "create": {
+    "required_fields": [
+      "descricao",
+      "valor",
+      "tipo_despesa",
+      "destino_pagamento"
+    ],
+    "optional_fields": [
+      "data",
+      "data_vencimento",
+      "forma_pagamento",
+      "status",
+      "data_pagamento"
+    ],
+    "allowed_status": [
+      "aberta",
+      "paga"
+    ],
+    "default_status": "aberta",
+    "value_must_be_positive": true,
+    "max_decimal_places": 2,
+    "server_owned_fields_rejected": [
+      "id",
+      "protocolo",
+      "assinatura_protocolo",
+      "foi_pago",
+      "caixa_sessao_id",
+      "created_at",
+      "updated_at"
+    ]
+  },
+  "update": {
+    "allowed_source_state": "aberta",
+    "editable_business_fields": [
+      "descricao",
+      "valor",
+      "tipo_despesa",
+      "destino_pagamento",
+      "data",
+      "data_vencimento",
+      "forma_pagamento"
+    ],
+    "may_transition_to_paid": true,
+    "payment_fields": [
+      "status",
+      "data_pagamento",
+      "forma_pagamento"
+    ],
+    "direct_cancel_rejected": true,
+    "server_owned_fields_rejected": [
+      "id",
+      "protocolo",
+      "assinatura_protocolo",
+      "foi_pago",
+      "caixa_sessao_id",
+      "created_at",
+      "updated_at"
+    ],
+    "transaction": true,
+    "pessimistic_lock": true
+  },
+  "derived_state": {
+    "aberta": {
+      "foi_pago": false,
+      "data_pagamento": null
+    },
+    "paga": {
+      "foi_pago": true,
+      "data_pagamento": "explicit-or-current-date-server-side"
+    },
+    "cancelada": {
+      "foi_pago": false,
+      "data_pagamento": "preserve-historical-value"
+    }
+  },
+  "reversal": {
+    "origin_type": "saida",
+    "reason_required": true,
+    "accepted_source_states": [
+      "aberta",
+      "paga"
+    ],
+    "creates_estorno_before_cancel_transition": true,
+    "unique_origin_constraint": "uq_financeiro_estornos_origem",
+    "duplicate_result": "409-without-duplicate-history",
+    "preserves": [
+      "protocolo",
+      "valor",
+      "descricao",
+      "tipo_despesa",
+      "destino_pagamento",
+      "forma_pagamento",
+      "data",
+      "data_vencimento",
+      "data_pagamento",
+      "caixa_sessao_id"
+    ],
+    "physical_delete": false
+  },
+  "cash_box": {
+    "auto_attach_types": [
+      "Dinheiro",
+      "PIX"
+    ],
+    "requires_paid_state": true,
+    "requires_exactly_one_open_session_tenant_wide": true,
+    "output_has_unit_field": false,
+    "ambiguous_multiple_open_sessions": "no-auto-attach",
+    "other_payment_types_auto_attach": false,
+    "reversed_output_subtracted_on_close": false,
+    "historical_caixa_link_preserved_after_reversal": true
+  },
+  "listing": {
+    "order": "data DESC, id DESC",
+    "filters": [
+      "search",
+      "status",
+      "date_from",
+      "date_to"
+    ],
+    "cursor": "opaque-data-id",
+    "limit_default": 50,
+    "limit_max": 100
+  },
+  "database_invariants": {
+    "migration": "2026_09_10_000800_harden_financeiro_saidas",
+    "value_check": "valor > 0",
+    "status_check": "aberta|paga|cancelada",
+    "protocol_immutable": true,
+    "signature_immutable_when_non_null": true,
+    "terminal_business_fields_immutable": true,
+    "physical_delete": "blocked-use-estorno",
+    "updated_at": "server-side-trigger",
+    "new_trigger_functions_security": "SECURITY INVOKER",
+    "new_trigger_functions_search_path": "empty",
+    "schema_qualified_database_references": true
+  },
+  "sources": {
+    "supabase_live": {
+      "project": "eramenhnqcbyctyiqwlm",
+      "access": "read-only-conformance",
+      "writes_performed": false,
+      "objects": [
+        "public.financeiro_saidas",
+        "public.financeiro_estornos",
+        "public.caixa_sessoes"
+      ]
+    },
+    "laravel_base": {
+      "repository": "DevCactusTecnologia/sislac-api",
+      "commit": "077c9a36893b896554e53fab7c04dd88f20a7799",
+      "branch": "fase-financeiro-caixa-operacional"
+    }
+  },
+  "out_of_scope": [
+    "plano-de-contas",
+    "dre",
+    "centro-de-custo",
+    "conciliacao-bancaria",
+    "contas-bancarias",
+    "fornecedor-estruturado",
+    "anexos-comprovantes",
+    "recorrencia",
+    "parcelamento-despesa",
+    "aprovacao-multinivel",
+    "sangria",
+    "suprimento",
+    "caixa-por-operador",
+    "erp",
+    "convenios-faturas",
+    "frontend-cutover"
+  ]
+}
