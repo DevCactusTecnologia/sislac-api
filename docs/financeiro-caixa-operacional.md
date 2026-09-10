@@ -12,7 +12,9 @@ Existe no máximo uma sessão com `status = 'aberta'` para cada `unidade_id`. A 
 
 Unidades diferentes podem manter sessões abertas simultaneamente. Esta subfase não implementa caixa por operador nem múltiplos caixas paralelos na mesma unidade.
 
-`valor_abertura` é gerado/validado como valor monetário não negativo. A abertura exige a permissão `gestao_financeira`.
+`valor_abertura` é validado como valor monetário não negativo. A abertura exige a permissão `gestao_financeira`.
+
+Na abertura, o cliente pode informar somente o identificador da unidade, o valor de abertura e observações. `responsavel_id`, `status`, `aberta_em`, `fechada_em`, `valor_fechamento` e `fechado_por` pertencem ao servidor e são explicitamente rejeitados quando enviados pelo cliente. O usuário responsável, o estado inicial e o instante de abertura são definidos pelo backend.
 
 ## Recebimentos vinculados ao Caixa
 
@@ -26,7 +28,9 @@ Uma sessão fechada não aceita novo movimento explicitamente vinculado. Os trig
 
 ## Fechamento server-side
 
-O cliente não fornece totais de fechamento. `CloseCaixa` executa em transação, bloqueia a sessão com `FOR UPDATE` e calcula os valores diretamente no PostgreSQL tenant usando aritmética `numeric`:
+O cliente não fornece totais nem estado de fechamento. No endpoint de fechamento, somente `observacoes` é campo operacional aceito do cliente. `sessao_id`, `unidade_id`, `valor_abertura`, `valor_fechamento`, `entradas_dinheiro`, `entradas_pix`, `saidas`, `saldo_final`, `status`, `fechada_em` e `fechado_por` são explicitamente rejeitados se enviados no corpo da requisição.
+
+`CloseCaixa` executa em transação, bloqueia a sessão com `FOR UPDATE` e calcula os valores diretamente no PostgreSQL tenant usando aritmética `numeric`:
 
 ```text
 saldo_final = valor_abertura + dinheiro + pix - saidas
@@ -36,6 +40,8 @@ No cálculo:
 
 - `dinheiro` considera pagamentos vinculados do tipo `Dinheiro` que não estejam estornados;
 - `pix` considera pagamentos vinculados do tipo `PIX` que não estejam estornados;
+- a autoridade canônica de estorno de pagamento é `financeiro_estornos` com `origem_tipo = 'pagamento'`;
+- por compatibilidade de migração, `status_pagamento = 'estornado'` também é respeitado como defesa para histórico legado ainda não materializado no livro canônico;
 - `saidas` considera somente Saídas pagas, vinculadas à sessão e sem estorno de origem `saida`.
 
 O mesmo saldo calculado é persistido em `valor_fechamento`. Uma segunda tentativa de fechar a mesma sessão retorna conflito e não reescreve `fechada_em` nem o histórico já persistido.
@@ -44,7 +50,7 @@ O mesmo saldo calculado é persistido em `valor_fechamento`. Uma segunda tentati
 
 Fechar uma sessão é uma atualização legítima de estado; portanto, `caixa_sessoes` não é append-only. Entretanto, `DELETE` físico de sessão é bloqueado pelo PostgreSQL para impedir desaparecimento do histórico financeiro.
 
-`financeiro_saidas` também bloqueia `DELETE` físico e orienta correção por estorno. O livro `financeiro_estornos`, criado na subfase Financeiro Core, continua sendo a trilha de correção financeira.
+`financeiro_saidas` também bloqueia `DELETE` físico e orienta correção por estorno. O livro `financeiro_estornos`, criado na subfase Financeiro Core, continua sendo a trilha canônica de correção financeira.
 
 `updated_at` da sessão é mantido server-side por trigger.
 
@@ -85,30 +91,33 @@ As funções de trigger novas usam `SECURITY INVOKER`, `search_path = ''` e refe
 
 ## Concordância com o Supabase
 
-O Supabase live foi usado somente em leitura para confirmar o schema e a semântica existentes de `caixa_sessoes`, `financeiro_saidas`, vínculos de `atendimento_pagamentos` e regras históricas de abertura/fechamento.
+O Supabase live foi usado somente em leitura para confirmar o schema e a semântica existentes de `caixa_sessoes`, `financeiro_saidas`, vínculos de `atendimento_pagamentos`, `financeiro_estornos` e regras históricas de abertura/fechamento.
 
-Nenhuma escrita, DDL, migration ou alteração foi executada no Supabase live durante esta subfase. O Laravel endurece a mesma intenção de negócio onde necessário, especialmente na serialização com o fechamento e na proteção contra DELETE físico da sessão.
+Nenhuma escrita, DDL, migration ou alteração foi executada no Supabase live durante esta subfase. O Laravel preserva a intenção de negócio e endurece a fronteira HTTP e a integridade do histórico onde necessário.
 
 ## Testes de contrato
 
-`CaixaOperacionalApiTest` e `CaixaOperacionalSchemaTest` provam em PostgreSQL tenant real:
+Os testes do Caixa provam em PostgreSQL tenant real e na validação HTTP:
 
 - abertura e leitura por unidade;
 - unicidade de sessão aberta no PostgreSQL;
 - abertura negativa rejeitada;
 - autorização de abertura e fechamento;
+- campos de estado da abertura são server-side e rejeitados no request;
 - vínculo automático apenas de Dinheiro/PIX;
 - pagamento válido sem sessão aberta;
 - rejeição de novo movimento em sessão fechada;
 - fechamento calculado exclusivamente no servidor;
-- exclusão de pagamentos estornados;
+- campos derivados e de estado do fechamento são rejeitados no request;
+- exclusão de pagamento com estorno canônico mesmo quando uma flag legada estiver dessincronizada;
+- compatibilidade com pagamento legado marcado como estornado;
 - desconto de Saídas pagas não estornadas;
 - exclusão de Saída estornada;
 - repetição de fechamento sem reescrita histórica;
 - atualização de `updated_at`;
 - bloqueio de DELETE físico de Saída e sessão.
 
-O provisionamento passa a registrar `2026_09_10_000700_add_caixa_operacional` como schema tenant atual.
+O provisionamento registra `2026_09_10_000700_add_caixa_operacional` como schema tenant atual.
 
 ## Fora do escopo
 
