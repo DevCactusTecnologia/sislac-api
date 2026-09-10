@@ -100,7 +100,7 @@ function financeiroCoreCreateAtendimento(PDO $pdo, array $exames): array
     $statement->execute();
     $atendimento = $statement->fetch(PDO::FETCH_ASSOC);
 
-    if (! is_array($atendimento)) {
+    if (is_array($atendimento) === false) {
         throw new RuntimeException('Falha ao criar atendimento de teste.');
     }
 
@@ -309,4 +309,19 @@ it('não concede estorno à recepção apenas por possuir registrar_pagamento', 
     ])->assertForbidden();
 
     expect((string) $pdo->query("SELECT status_pagamento FROM atendimento_pagamentos WHERE id = {$pagamentoId}")?->fetchColumn())->toBe('efetuado');
+});
+
+it('proíbe substituição destrutiva de pagamentos pelo PATCH de atendimento', function () {
+    $pdo = financeiroCoreControlConnection($this->financeiroCoreDatabase);
+    $atendimento = financeiroCoreCreateAtendimento($pdo, [
+        ['nome' => 'Hemograma', 'valor' => '100.00'],
+    ]);
+    $pagamentoId = financeiroCoreInsertPayment($pdo, $atendimento['id'], '50.00');
+
+    $this->patchJson('/api/atendimentos/'.$atendimento['id'], [
+        'pagamentos' => [],
+    ])->assertUnprocessable();
+
+    expect((int) $pdo->query("SELECT count(*) FROM atendimento_pagamentos WHERE id = {$pagamentoId}")?->fetchColumn())->toBe(1)
+        ->and((string) $pdo->query("SELECT status_pagamento FROM atendimento_pagamentos WHERE id = {$pagamentoId}")?->fetchColumn())->toBe('efetuado');
 });
