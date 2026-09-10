@@ -80,7 +80,7 @@ it('ativa o tenant somente depois de criar banco migrar e executar smoke check',
         ->first();
 
     expect($run?->status)->toBe('succeeded')
-        ->and($run?->schema_version)->toBe('2026_09_10_000800_harden_financeiro_saidas')
+        ->and($run?->schema_version)->toBe('2026_09_10_000900_add_convenios_faturas_core')
         ->and($run?->finished_at)->not->toBeNull();
 
     expect(DB::connection('central')->table('platform_audit')
@@ -99,6 +99,9 @@ it('ativa o tenant somente depois de criar banco migrar e executar smoke check',
         'lab_config',
         'caixa_sessoes',
         'financeiro_saidas',
+        'convenios',
+        'convenio_faturas',
+        'convenio_fatura_itens',
     ] as $table) {
         $statement = $tenantDb->prepare('SELECT to_regclass(?)');
         $statement->execute(['public.'.$table]);
