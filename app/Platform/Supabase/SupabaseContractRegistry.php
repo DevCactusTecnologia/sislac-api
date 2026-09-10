@@ -46,9 +46,9 @@ final class SupabaseContractRegistry
      */
     public function names(): array
     {
-        return array_values(array_map(
+        return array_map(
             static fn (array $contract): string => $contract['name'],
             $this->contracts(),
-        ));
+        );
     }
 }
