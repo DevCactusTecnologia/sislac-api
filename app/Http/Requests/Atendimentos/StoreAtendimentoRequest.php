@@ -49,6 +49,10 @@ final class StoreAtendimentoRequest extends FormRequest
             'exames.*.lab_apoio_id' => ['sometimes', 'nullable', 'uuid'],
             'exames.*.cobranca_destino' => ['sometimes', 'string', Rule::in(['paciente', 'convenio'])],
             'exames.*.convenio_cobranca_id' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'subtotal' => ['missing'],
+            'desconto_total' => ['missing'],
+            'acrescimo_total' => ['missing'],
+            'total' => ['missing'],
             'pagamentos' => ['missing'],
         ];
     }
