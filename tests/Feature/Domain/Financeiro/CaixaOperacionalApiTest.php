@@ -154,7 +154,7 @@ it('recusa saldo inicial negativo', function () {
         ->assertJsonValidationErrors('valor_abertura');
 });
 
-it('exige gestão financeira para abrir e fechar caixa', function () {
+it('exige gestão financeira para abrir caixa', function () {
     DB::connection('central')->table('memberships')
         ->where('user_id', $this->caixaUser->getKey())
         ->where('tenant_id', $this->caixaTenant->getKey())
@@ -164,6 +164,30 @@ it('exige gestão financeira para abrir e fechar caixa', function () {
         'unidade_id' => 'und-001',
         'valor_abertura' => '0.00',
     ])->assertForbidden();
+});
+
+it('exige gestão financeira para fechar caixa sem alterar a sessão', function () {
+    $session = $this->postJson('/api/financeiro/caixa/abrir', [
+        'unidade_id' => 'und-001',
+        'valor_abertura' => '100.00',
+    ])->assertCreated();
+    $sessionId = (int) $session->json('data.id');
+
+    DB::connection('central')->table('memberships')
+        ->where('user_id', $this->caixaUser->getKey())
+        ->where('tenant_id', $this->caixaTenant->getKey())
+        ->update(['role' => 'recepcionista']);
+
+    $this->postJson('/api/financeiro/caixa/'.$sessionId.'/fechar')
+        ->assertForbidden();
+
+    $pdo = caixaOpControlConnection($this->caixaDatabase);
+    $persisted = $pdo->query("SELECT status, fechada_em FROM caixa_sessoes WHERE id = {$sessionId}")?->fetch(PDO::FETCH_ASSOC);
+
+    expect($persisted)->toMatchArray([
+        'status' => 'aberta',
+        'fechada_em' => null,
+    ]);
 });
 
 it('vincula automaticamente somente dinheiro e pix ao caixa aberto da unidade', function () {
@@ -193,6 +217,22 @@ it('vincula automaticamente somente dinheiro e pix ao caixa aberto da unidade', 
         ['tipo' => 'PIX', 'caixa_sessao_id' => $sessionId],
         ['tipo' => 'Crédito', 'caixa_sessao_id' => null],
     ]);
+});
+
+it('mantém pagamento em dinheiro sem vínculo quando não existe caixa aberto', function () {
+    $pdo = caixaOpControlConnection($this->caixaDatabase);
+    $atendimentoId = caixaOpCreateAtendimento($pdo, 'und-001');
+
+    $payment = $this->postJson('/api/financeiro/atendimentos/'.$atendimentoId.'/pagamentos', [
+        'tipo' => 'Dinheiro',
+        'valor' => '50.00',
+    ])->assertCreated();
+    $paymentId = (int) $payment->json('data.id');
+
+    $statement = $pdo->prepare('SELECT caixa_sessao_id FROM atendimento_pagamentos WHERE id = ?');
+    $statement->execute([$paymentId]);
+
+    expect($statement->fetchColumn())->toBeFalse();
 });
 
 it('fecha caixa com saldo calculado no servidor e ignora pagamento estornado', function () {
@@ -240,12 +280,45 @@ it('fecha caixa com saldo calculado no servidor e ignora pagamento estornado', f
 
     expect((int) $money->json('data.id'))->toBeGreaterThan(0);
 
-    $persisted = $pdo->query("SELECT status, valor_fechamento::text FROM caixa_sessoes WHERE id = {$sessionId}")?->fetch(PDO::FETCH_ASSOC);
-    expect($persisted)->toMatchArray([
+    $beforeRetry = $pdo->query("SELECT status, fechada_em::text, valor_fechamento::text FROM caixa_sessoes WHERE id = {$sessionId}")?->fetch(PDO::FETCH_ASSOC);
+    expect($beforeRetry)->toMatchArray([
         'status' => 'fechada',
         'valor_fechamento' => '180.00',
     ]);
 
     $this->postJson('/api/financeiro/caixa/'.$sessionId.'/fechar')
         ->assertConflict();
+
+    $afterRetry = $pdo->query("SELECT status, fechada_em::text, valor_fechamento::text FROM caixa_sessoes WHERE id = {$sessionId}")?->fetch(PDO::FETCH_ASSOC);
+    expect($afterRetry)->toBe($beforeRetry);
+});
+
+it('ignora saída estornada no saldo de fechamento', function () {
+    $session = $this->postJson('/api/financeiro/caixa/abrir', [
+        'unidade_id' => 'und-001',
+        'valor_abertura' => '100.00',
+    ])->assertCreated();
+    $sessionId = (int) $session->json('data.id');
+    $pdo = caixaOpControlConnection($this->caixaDatabase);
+
+    $saida = $pdo->query(<<<'SQL'
+        INSERT INTO financeiro_saidas
+            (protocolo, descricao, valor, tipo_despesa, destino_pagamento, foi_pago, data_pagamento, forma_pagamento, status)
+        VALUES ('SAI-TESTE-ESTORNO', 'Saída estornada', 25.00, 'Outros', 'Fornecedor', true, current_date, 'Dinheiro', 'paga')
+        RETURNING id, caixa_sessao_id
+    SQL)?->fetch(PDO::FETCH_ASSOC);
+
+    expect($saida)->toBeArray()
+        ->and((int) ($saida['caixa_sessao_id'] ?? 0))->toBe($sessionId);
+
+    $estorno = $pdo->prepare(<<<'SQL'
+        INSERT INTO financeiro_estornos (origem_tipo, origem_id, motivo, valor, criado_por)
+        VALUES ('saida', ?, 'Saída cancelada antes do fechamento', 25.00, ?)
+    SQL);
+    $estorno->execute([(int) ($saida['id'] ?? 0), (string) $this->caixaUser->getKey()]);
+
+    $this->postJson('/api/financeiro/caixa/'.$sessionId.'/fechar')
+        ->assertOk()
+        ->assertJsonPath('data.saidas', '0.00')
+        ->assertJsonPath('data.saldo_final', '100.00');
 });
