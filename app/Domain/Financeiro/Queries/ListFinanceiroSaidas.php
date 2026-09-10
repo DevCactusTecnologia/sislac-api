@@ -57,7 +57,7 @@ final class ListFinanceiroSaidas
             'data' => $data,
             'next_cursor' => $hasMore && $last instanceof stdClass
                 ? [
-                    'data' => CarbonImmutable::parse((string) $last->data)->toISOString(),
+                    'data' => (string) CarbonImmutable::parse((string) $last->data)->toISOString(),
                     'id' => (int) $last->id,
                 ]
                 : null,
@@ -114,7 +114,7 @@ final class ListFinanceiroSaidas
         return [
             'id' => (int) $row->id,
             'protocolo' => (string) $row->protocolo,
-            'data' => CarbonImmutable::parse((string) $row->data)->toISOString(),
+            'data' => (string) CarbonImmutable::parse((string) $row->data)->toISOString(),
             'descricao' => (string) $row->descricao,
             'valor' => $this->money($row->valor),
             'tipo_despesa' => (string) $row->tipo_despesa,
@@ -125,8 +125,8 @@ final class ListFinanceiroSaidas
             'data_pagamento' => $row->data_pagamento === null ? null : (string) $row->data_pagamento,
             'forma_pagamento' => $row->forma_pagamento === null ? null : (string) $row->forma_pagamento,
             'caixa_sessao_id' => $row->caixa_sessao_id === null ? null : (int) $row->caixa_sessao_id,
-            'created_at' => CarbonImmutable::parse((string) $row->created_at)->toISOString(),
-            'updated_at' => CarbonImmutable::parse((string) $row->updated_at)->toISOString(),
+            'created_at' => (string) CarbonImmutable::parse((string) $row->created_at)->toISOString(),
+            'updated_at' => (string) CarbonImmutable::parse((string) $row->updated_at)->toISOString(),
         ];
     }
 
