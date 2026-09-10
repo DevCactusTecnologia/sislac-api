@@ -18,7 +18,7 @@ final class MigratedContractsLiveContract
     {
         $this->assertReadOnly($connection);
 
-        $relations = array_map(
+        $relations = array_values(array_map(
             static fn (object $row): string => (string) get_object_vars($row)['identity'],
             $connection->select(<<<'SQL'
                 SELECT format('%I.%I', n.nspname, c.relname) AS identity
@@ -28,9 +28,9 @@ final class MigratedContractsLiveContract
                   AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
                 ORDER BY identity
                 SQL),
-        );
+        ));
 
-        $routines = array_map(
+        $routines = array_values(array_map(
             static fn (object $row): string => (string) get_object_vars($row)['identity'],
             $connection->select(<<<'SQL'
                 SELECT format(
@@ -45,7 +45,7 @@ final class MigratedContractsLiveContract
                   AND p.prokind IN ('f', 'p')
                 ORDER BY identity
                 SQL),
-        );
+        ));
 
         return $this->compare($relations, $routines);
     }
