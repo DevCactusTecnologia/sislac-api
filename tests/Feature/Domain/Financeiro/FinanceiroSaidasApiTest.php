@@ -212,3 +212,203 @@ it('não expõe endpoint delete de saída', function () {
     $this->deleteJson('/api/financeiro/saidas/1')
         ->assertNotFound();
 });
+
+it('corrige todos os campos de negócio enquanto a saída está aberta', function () {
+    $created = $this->postJson('/api/financeiro/saidas', validSaidaPayload())
+        ->assertCreated();
+    $id = (int) $created->json('data.id');
+
+    $this->patchJson('/api/financeiro/saidas/'.$id, [
+        'data' => '2026-09-08T15:30:00-03:00',
+        'descricao' => '  Energia   unidade 02 ',
+        'valor' => '98.75',
+        'tipo_despesa' => '  Conta   pública ',
+        'destino_pagamento' => '  Concessionária   Regional ',
+        'data_vencimento' => '2026-09-25',
+        'forma_pagamento' => '  Boleto  ',
+    ])->assertOk()
+        ->assertJsonPath('data.descricao', 'Energia unidade 02')
+        ->assertJsonPath('data.valor', '98.75')
+        ->assertJsonPath('data.tipo_despesa', 'Conta pública')
+        ->assertJsonPath('data.destino_pagamento', 'Concessionária Regional')
+        ->assertJsonPath('data.data_vencimento', '2026-09-25')
+        ->assertJsonPath('data.forma_pagamento', 'Boleto')
+        ->assertJsonPath('data.status', 'aberta')
+        ->assertJsonPath('data.foi_pago', false);
+});
+
+it('efetiva saída aberta como paga e deixa o PostgreSQL definir o estado derivado', function () {
+    $created = $this->postJson('/api/financeiro/saidas', validSaidaPayload())
+        ->assertCreated();
+    $id = (int) $created->json('data.id');
+
+    $this->patchJson('/api/financeiro/saidas/'.$id, [
+        'status' => 'paga',
+        'forma_pagamento' => 'Crédito',
+    ])->assertOk()
+        ->assertJsonPath('data.status', 'paga')
+        ->assertJsonPath('data.foi_pago', true)
+        ->assertJsonPath('data.data_pagamento', now()->toDateString())
+        ->assertJsonPath('data.caixa_sessao_id', null);
+});
+
+it('vincula saída paga em dinheiro ou pix ao único caixa aberto', function (string $formaPagamento) {
+    $session = $this->postJson('/api/financeiro/caixa/abrir', [
+        'unidade_id' => 'und-saidas-001',
+        'valor_abertura' => '0.00',
+    ])->assertCreated();
+    $sessionId = (int) $session->json('data.id');
+
+    $created = $this->postJson('/api/financeiro/saidas', validSaidaPayload())
+        ->assertCreated();
+    $id = (int) $created->json('data.id');
+
+    $this->patchJson('/api/financeiro/saidas/'.$id, [
+        'status' => 'paga',
+        'forma_pagamento' => $formaPagamento,
+    ])->assertOk()
+        ->assertJsonPath('data.status', 'paga')
+        ->assertJsonPath('data.caixa_sessao_id', $sessionId);
+})->with(['Dinheiro', 'PIX']);
+
+it('não vincula saída paga por crédito mesmo com um caixa aberto', function () {
+    $this->postJson('/api/financeiro/caixa/abrir', [
+        'unidade_id' => 'und-saidas-001',
+        'valor_abertura' => '0.00',
+    ])->assertCreated();
+
+    $created = $this->postJson('/api/financeiro/saidas', validSaidaPayload())
+        ->assertCreated();
+    $id = (int) $created->json('data.id');
+
+    $this->patchJson('/api/financeiro/saidas/'.$id, [
+        'status' => 'paga',
+        'forma_pagamento' => 'Crédito',
+    ])->assertOk()
+        ->assertJsonPath('data.caixa_sessao_id', null);
+});
+
+it('permite pagar saída em dinheiro sem caixa aberto e mantém vínculo nulo', function () {
+    $created = $this->postJson('/api/financeiro/saidas', validSaidaPayload())
+        ->assertCreated();
+    $id = (int) $created->json('data.id');
+
+    $this->patchJson('/api/financeiro/saidas/'.$id, [
+        'status' => 'paga',
+        'forma_pagamento' => 'Dinheiro',
+    ])->assertOk()
+        ->assertJsonPath('data.status', 'paga')
+        ->assertJsonPath('data.caixa_sessao_id', null);
+});
+
+it('recusa edição comum de saída já paga sem alterar seus dados', function () {
+    $created = $this->postJson('/api/financeiro/saidas', validSaidaPayload([
+        'status' => 'paga',
+        'forma_pagamento' => 'Crédito',
+    ]))->assertCreated();
+    $id = (int) $created->json('data.id');
+
+    $this->patchJson('/api/financeiro/saidas/'.$id, [
+        'descricao' => 'Alteração indevida',
+        'valor' => '10.00',
+    ])->assertConflict();
+
+    $pdo = saidasApiControlConnection($this->saidasApiDatabase);
+    $statement = $pdo->prepare('SELECT descricao, valor::text, status FROM financeiro_saidas WHERE id = ?');
+    $statement->execute([$id]);
+
+    expect($statement->fetch(PDO::FETCH_ASSOC))->toMatchArray([
+        'descricao' => 'Conta de energia',
+        'valor' => '120.50',
+        'status' => 'paga',
+    ]);
+});
+
+it('recusa edição comum de saída cancelada sem alterar seus dados', function () {
+    $created = $this->postJson('/api/financeiro/saidas', validSaidaPayload())
+        ->assertCreated();
+    $id = (int) $created->json('data.id');
+
+    $pdo = saidasApiControlConnection($this->saidasApiDatabase);
+    $estorno = $pdo->prepare(<<<'SQL'
+        INSERT INTO financeiro_estornos (origem_tipo, origem_id, motivo, valor, criado_por)
+        VALUES ('saida', ?, 'Fixture de cancelamento', 120.50, ?)
+    SQL);
+    $estorno->execute([$id, (string) $this->saidasApiUser->getKey()]);
+    $cancel = $pdo->prepare("UPDATE financeiro_saidas SET status = 'cancelada' WHERE id = ?");
+    $cancel->execute([$id]);
+
+    $this->patchJson('/api/financeiro/saidas/'.$id, [
+        'descricao' => 'Alteração indevida',
+    ])->assertConflict();
+
+    $statement = $pdo->prepare('SELECT descricao, status FROM financeiro_saidas WHERE id = ?');
+    $statement->execute([$id]);
+
+    expect($statement->fetch(PDO::FETCH_ASSOC))->toMatchArray([
+        'descricao' => 'Conta de energia',
+        'status' => 'cancelada',
+    ]);
+});
+
+it('recusa cancelamento direto no patch', function () {
+    $created = $this->postJson('/api/financeiro/saidas', validSaidaPayload())
+        ->assertCreated();
+    $id = (int) $created->json('data.id');
+
+    $this->patchJson('/api/financeiro/saidas/'.$id, [
+        'status' => 'cancelada',
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors('status');
+});
+
+it('recusa campos server-side no patch de saída', function () {
+    $created = $this->postJson('/api/financeiro/saidas', validSaidaPayload())
+        ->assertCreated();
+    $id = (int) $created->json('data.id');
+
+    $this->patchJson('/api/financeiro/saidas/'.$id, [
+        'id' => 999,
+        'protocolo' => 'SAI-CLIENTE',
+        'assinatura_protocolo' => 'fake',
+        'foi_pago' => true,
+        'caixa_sessao_id' => 1,
+        'created_at' => now()->toISOString(),
+        'updated_at' => now()->toISOString(),
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors([
+            'id',
+            'protocolo',
+            'assinatura_protocolo',
+            'foi_pago',
+            'caixa_sessao_id',
+            'created_at',
+            'updated_at',
+        ]);
+});
+
+it('retorna 404 ao corrigir saída inexistente', function () {
+    $this->patchJson('/api/financeiro/saidas/999999', [
+        'descricao' => 'Inexistente',
+    ])->assertNotFound();
+});
+
+it('exige gestão financeira para corrigir saída', function () {
+    $created = $this->postJson('/api/financeiro/saidas', validSaidaPayload())
+        ->assertCreated();
+    $id = (int) $created->json('data.id');
+
+    DB::connection('central')->table('memberships')
+        ->where('user_id', $this->saidasApiUser->getKey())
+        ->where('tenant_id', $this->saidasApiTenant->getKey())
+        ->update(['role' => 'recepcionista']);
+
+    $this->patchJson('/api/financeiro/saidas/'.$id, [
+        'descricao' => 'Sem permissão',
+    ])->assertForbidden();
+
+    $pdo = saidasApiControlConnection($this->saidasApiDatabase);
+    $statement = $pdo->prepare('SELECT descricao FROM financeiro_saidas WHERE id = ?');
+    $statement->execute([$id]);
+    expect($statement->fetchColumn())->toBe('Conta de energia');
+});
