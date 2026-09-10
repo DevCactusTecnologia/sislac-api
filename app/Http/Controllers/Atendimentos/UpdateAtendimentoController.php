@@ -31,9 +31,8 @@ final class UpdateAtendimentoController extends Controller
 
         $requiresEdit = $this->requiresEditPermission($payload);
         $requiresCancel = ($payload['cancelar'] ?? false) === true;
-        $requiresPayment = array_key_exists('pagamentos', $payload);
 
-        if (! $requiresEdit && ! $requiresCancel && ! $requiresPayment) {
+        if (! $requiresEdit && ! $requiresCancel) {
             throw ValidationException::withMessages([
                 'atendimento' => ['Nenhuma alteração suportada foi informada.'],
             ]);
@@ -44,10 +43,6 @@ final class UpdateAtendimentoController extends Controller
         }
 
         if ($requiresCancel && ! $authorizer->allows($userId, $tenantId, TenantPermission::CancelAppointment)) {
-            return response()->json(['message' => 'Acesso não autorizado.'], 403);
-        }
-
-        if ($requiresPayment && ! $authorizer->allows($userId, $tenantId, TenantPermission::RegisterPayment)) {
             return response()->json(['message' => 'Acesso não autorizado.'], 403);
         }
 
