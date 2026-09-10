@@ -11,6 +11,7 @@ use App\Http\Controllers\Financeiro\ListAReceberPacientesController;
 use App\Http\Controllers\Financeiro\ListRecebimentosPacientesController;
 use App\Http\Controllers\Financeiro\OpenCaixaController;
 use App\Http\Controllers\Financeiro\RegisterPacientePaymentController;
+use App\Http\Controllers\Financeiro\ReverseFinanceiroSaidaController;
 use App\Http\Controllers\Financeiro\ReversePacientePaymentController;
 use App\Http\Controllers\Financeiro\ShowOpenCaixaController;
 use App\Http\Controllers\Financeiro\StoreFinanceiroSaidaController;
@@ -93,6 +94,11 @@ Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financei
     ->patch('/financeiro/saidas/{id}', UpdateFinanceiroSaidaController::class)
     ->whereNumber('id')
     ->name('financeiro.saidas.update');
+
+Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financeira'])
+    ->post('/financeiro/saidas/{id}/estorno', ReverseFinanceiroSaidaController::class)
+    ->whereNumber('id')
+    ->name('financeiro.saidas.estorno');
 
 Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_financeiro'])
     ->get('/financeiro/caixa/aberto', ShowOpenCaixaController::class)
