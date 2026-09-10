@@ -1,0 +1,128 @@
+{
+  "contract": "financeiro-caixa-operacional",
+  "version": 2,
+  "captured_at": "2026-09-10",
+  "scope": [
+    "caixa-sessao-por-unidade",
+    "vinculo-automatico-dinheiro-pix",
+    "fechamento-server-side",
+    "historico-nao-destrutivo",
+    "financeiro-saidas-estrutura-minima"
+  ],
+  "authority": {
+    "database": "tenant-postgresql",
+    "client_may_supply_closing_totals": false,
+    "cash_box_scope": "unidade_id",
+    "tenant_id_duplicated_inside_tenant_database": false
+  },
+  "http": {
+    "GET /api/financeiro/caixa/aberto": {
+      "permission": "visualizar_financeiro"
+    },
+    "POST /api/financeiro/caixa/abrir": {
+      "permission": "gestao_financeira"
+    },
+    "POST /api/financeiro/caixa/{id}/fechar": {
+      "permission": "gestao_financeira"
+    }
+  },
+  "session": {
+    "one_open_per_unit": true,
+    "database_constraint": "uq_caixa_sessao_aberta_por_unidade",
+    "open_value_must_be_non_negative": true,
+    "open_client_writable_fields": [
+      "unidade_id",
+      "valor_abertura",
+      "observacoes"
+    ],
+    "open_server_owned_fields_rejected": [
+      "responsavel_id",
+      "status",
+      "aberta_em",
+      "fechada_em",
+      "valor_fechamento",
+      "fechado_por"
+    ],
+    "physical_delete": "blocked",
+    "close_is_legitimate_update": true
+  },
+  "payments": {
+    "auto_attach_types": [
+      "Dinheiro",
+      "PIX"
+    ],
+    "other_types_auto_attach": false,
+    "absence_of_open_session": "payment-remains-valid-with-null-caixa_sessao_id",
+    "closed_session_accepts_new_linked_movement": false,
+    "reversal_authority": "financeiro_estornos",
+    "legacy_status_estornado_defense": true,
+    "reversed_count_in_close": false
+  },
+  "close": {
+    "formula": "valor_abertura + dinheiro + pix - saidas",
+    "calculation": "tenant-postgresql-numeric",
+    "transaction": true,
+    "pessimistic_lock": true,
+    "client_writable_fields": [
+      "observacoes"
+    ],
+    "server_owned_fields_rejected": [
+      "sessao_id",
+      "unidade_id",
+      "valor_abertura",
+      "valor_fechamento",
+      "entradas_dinheiro",
+      "entradas_pix",
+      "saidas",
+      "saldo_final",
+      "status",
+      "fechada_em",
+      "fechado_por"
+    ],
+    "repeat": "409-without-history-rewrite"
+  },
+  "outputs": {
+    "status": "structural-dependency-only",
+    "crud_http": false,
+    "paid_linked_unreversed_subtracted": true,
+    "reversed_subtracted": false,
+    "physical_delete": "blocked-use-estorno"
+  },
+  "invariants": {
+    "central_connection_for_financial_domain": false,
+    "new_trigger_functions_security": "SECURITY INVOKER",
+    "new_trigger_functions_search_path": "empty",
+    "schema_qualified_database_references": true
+  },
+  "sources": {
+    "supabase_live": {
+      "project": "eramenhnqcbyctyiqwlm",
+      "access": "read-only-conformance",
+      "objects": [
+        "public.caixa_sessoes",
+        "public.financeiro_saidas",
+        "public.atendimento_pagamentos",
+        "public.financeiro_estornos"
+      ]
+    },
+    "laravel_base": {
+      "repository": "DevCactusTecnologia/sislac-api",
+      "commit": "dd338a4473a4fff21f83c4696d7864b07af6ec53",
+      "branch": "fase-financeiro-totais-atendimento"
+    }
+  },
+  "out_of_scope": [
+    "crud-saidas",
+    "sangria",
+    "suprimento",
+    "caixa-por-operador",
+    "multiplos-caixas-mesma-unidade",
+    "conciliacao",
+    "dre",
+    "erp",
+    "convenios-faturas",
+    "resumo-financeiro",
+    "frontend-cutover",
+    "impressao-ui"
+  ]
+}

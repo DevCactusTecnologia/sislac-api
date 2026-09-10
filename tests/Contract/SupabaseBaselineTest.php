@@ -5,27 +5,40 @@ it('mantém íntegro o manifesto Supabase observado pelo Laravel', function () {
     exec($command, $output, $exitCode);
 
     expect($exitCode)->toBe(0)
-        ->and(implode("\n", $output))->toContain('manifesto Supabase íntegro e determinístico');
+        ->and(implode("\n", $output))->toContain('manifesto Supabase íntegro');
 });
 
-it('fixa a superfície necessária para as próximas ondas de migração', function () {
+it('descreve o gate do CI como integridade offline, não conformidade live', function () {
+    $workflow = (string) file_get_contents(base_path('.github/workflows/ci.yml'));
+
+    expect($workflow)
+        ->toContain('Integridade do manifesto Supabase')
+        ->not->toContain('Contrato Supabase ↔ Laravel');
+});
+
+it('fixa a baseline no frontend validado e somente nos contratos já migrados', function () {
     $manifest = json_decode(
         (string) file_get_contents(base_path('docs/contracts/supabase-baseline.json')),
         true,
         flags: JSON_THROW_ON_ERROR,
     );
 
-    expect($manifest['frontend']['sha'])->toBe('0760c6123f3062842eaff5f7304b6460c00c058d')
+    expect($manifest['version'])->toBe(3)
+        ->and($manifest['frontend']['sha'])->toBe('5f3adbab91631e2b459bb83e20ae6eef79b5f8b6')
         ->and($manifest['supabase']['postgres_major'])->toBe(17)
-        ->and($manifest['runtime_contract']['tables_views_consumed'])->toBe(77)
-        ->and($manifest['runtime_contract']['rpcs_consumed'])->toBe(52)
-        ->and($manifest['runtime_contract']['edge_functions_consumed'])->toBe(23)
-        ->and($manifest['runtime_contract']['buckets_consumed'])->toBe(4)
-        ->and($manifest['runtime_contract']['realtime_tables'])->toBe([
-            'atendimento_exames',
-            'atendimento_pagamentos',
+        ->and($manifest['supabase']['runtime'])->toBe('single-tenant')
+        ->and(array_column($manifest['migrated_contracts'], 'name'))->toBe([
+            'pacientes',
             'atendimentos',
+            'rotina',
+            'financeiro-core',
+            'financeiro-totais-atendimento',
+            'financeiro-caixa-operacional',
+            'financeiro-saidas',
         ])
-        ->and($manifest['storage_inventory'])->toHaveCount(7)
-        ->and($manifest['edge_function_inventory'])->toHaveCount(33);
+        ->and($manifest)->not->toHaveKeys([
+            'runtime_contract',
+            'storage_inventory',
+            'edge_function_inventory',
+        ]);
 });

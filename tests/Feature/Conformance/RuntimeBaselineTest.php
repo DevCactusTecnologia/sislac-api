@@ -1,6 +1,6 @@
 <?php
 
-it('preserva findings conhecidos da origem sem tratá-los como requisitos Laravel', function () {
+it('preserva somente invariantes atuais e migradas da origem', function () {
     $path = base_path('docs/contracts/supabase-baseline.json');
 
     expect($path)->toBeFile();
@@ -8,21 +8,25 @@ it('preserva findings conhecidos da origem sem tratá-los como requisitos Larave
     /** @var array<string, mixed> $baseline */
     $baseline = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($baseline['schema_inventory'])->toMatchArray([
-        'tables' => 96,
-        'views' => 2,
-        'enums' => 6,
-        'rls_enabled_tables' => 96,
-        'rls_disabled_tables' => 0,
-    ])
-        ->and($baseline['known_findings']['security'])->toContain(
-            'authenticated_security_definer_function_executable:create_atendimento_tx',
-            'authenticated_security_definer_function_executable:update_atendimento_tx',
-            'auth_compromised_credential_check_disabled',
-        )
-        ->and($baseline['known_findings']['performance'])->toContain(
-            'auth_rls_initplan',
-            'multiple_permissive_policies',
-            'duplicate_index',
-        );
+    expect($baseline['version'])->toBe(3)
+        ->and($baseline['frontend']['sha'])->toBe('5f3adbab91631e2b459bb83e20ae6eef79b5f8b6')
+        ->and($baseline['supabase'])->toMatchArray([
+            'project_ref' => 'eramenhnqcbyctyiqwlm',
+            'postgres_major' => 17,
+            'runtime' => 'single-tenant',
+        ])
+        ->and(array_column($baseline['migrated_contracts'], 'name'))->toBe([
+            'pacientes',
+            'atendimentos',
+            'rotina',
+            'financeiro-core',
+            'financeiro-totais-atendimento',
+            'financeiro-caixa-operacional',
+            'financeiro-saidas',
+        ])
+        ->and($baseline)->not->toHaveKeys([
+            'schema_inventory',
+            'known_findings',
+            'runtime_contract',
+        ]);
 });

@@ -1,8 +1,6 @@
 # Deploy — VPS (Ubuntu 24.04)
 
-Este guia descreve somente a fundação atualmente implementada no repositório.
-O frontend permanece separado em `sislac.com.br` e a API Laravel é publicada em
-`api.sislac.com.br`.
+Este guia descreve somente a fundação atualmente implementada. O frontend permanece separado em `sislac.com.br` e a API Laravel em `api.sislac.com.br`.
 
 ## Arquitetura implantada
 
@@ -10,60 +8,25 @@ A VPS executa via Docker Compose:
 
 - PostgreSQL 17: banco central `sislac_central` e bancos físicos dos laboratórios;
 - PHP-FPM 8.4: aplicação Laravel;
-- Nginx interno: exposto somente em `127.0.0.1:8080`;
-- pgAdmin opcional: perfil `tools`, exposto somente em `127.0.0.1:5050`.
+- Nginx interno: somente loopback;
+- pgAdmin opcional: perfil `tools`, somente loopback.
 
-Cache, sessão e fila usam PostgreSQL nesta fundação. O banco de cada novo
-laboratório é criado pelo `TenantProvisioner`; não deve ser criado manualmente.
+Cache e sessão usam PostgreSQL. A fila é `sync`; não há worker nem tabelas persistentes de jobs nesta fundação.
 
-## 1. Preparar a VPS
+## 1. Preparar e clonar
 
-Como `root`:
-
-```bash
-apt update && apt upgrade -y
-apt install -y ca-certificates curl gnupg ufw fail2ban git nginx certbot python3-certbot-nginx
-
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-  | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-
-echo "deb [signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
-  > /etc/apt/sources.list.d/docker.list
-
-apt update
-apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-adduser sislac
-usermod -aG docker sislac
-```
-
-Firewall mínimo:
+Instale Docker/Nginx/TLS conforme a política da VPS e exponha somente 22, 80 e 443. Com o usuário de deploy:
 
 ```bash
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 22/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw enable
-```
-
-PostgreSQL, pgAdmin e o Nginx do compose permanecem ligados apenas ao loopback.
-
-## 2. Clonar e configurar
-
-Com o usuário de deploy:
-
-```bash
-su - sislac
 git clone git@github.com:DevCactusTecnologia/sislac-api.git
 cd sislac-api
 cp .env.example .env
 nano .env
 ```
 
-Defina pelo menos:
+O repositório é de uso interno e deve estar privado antes do deploy definitivo.
+
+## 2. Variáveis essenciais
 
 ```dotenv
 APP_ENV=production
@@ -77,48 +40,41 @@ DB_HOST=127.0.0.1
 DB_PORT=5432
 DB_DATABASE=sislac_central
 DB_USERNAME=sislac_app
-DB_PASSWORD=<senha-forte-do-usuario-da-aplicacao>
+DB_PASSWORD=<senha-forte>
 DB_ROOT_USER=postgres
-DB_ROOT_PASSWORD=<senha-forte-administrativa>
+DB_ROOT_PASSWORD=<senha-administrativa>
 
 TENANT_DB_HOST=127.0.0.1
 TENANT_DB_PORT=5432
 TENANT_DB_USERNAME=sislac_app
-TENANT_DB_PASSWORD=<mesma-senha-de-DB_PASSWORD>
+TENANT_DB_PASSWORD=<senha-do-app>
+
+# Autenticação clínica transitória
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+
+# Concordância/migração read-only
+SUPABASE_DB_HOST=<host-suportado-pelo-ambiente>
+SUPABASE_DB_PORT=5432
+SUPABASE_DB_DATABASE=postgres
+SUPABASE_DB_USERNAME=supabase_read_only_user
+SUPABASE_DB_PASSWORD=<senha-da-role-read-only>
+SUPABASE_DB_SSLMODE=require
 
 CACHE_STORE=database
 SESSION_DRIVER=database
 SESSION_ENCRYPT=true
-SESSION_DOMAIN=.sislac.com.br
 SESSION_SECURE_COOKIE=true
 SESSION_HTTP_ONLY=true
 SESSION_SAME_SITE=lax
-SANCTUM_STATEFUL_DOMAINS=sislac.com.br,www.sislac.com.br
-QUEUE_CONNECTION=database
+QUEUE_CONNECTION=sync
 ```
 
-Gere as senhas no próprio servidor, por exemplo:
+Não use `service_role`/secret key para validar o Bearer clínico. A publishable key identifica o projeto; o access token do usuário é validado server-side pelo Supabase Auth.
 
-```bash
-openssl rand -base64 32
-```
-
-As variáveis `SUPABASE_DB_*` são necessárias somente enquanto operações de
-transição precisarem consultar a origem Supabase em modo somente leitura. Não
-use credencial com permissão de escrita para essa conexão. Em backend persistente,
-use a conexão direta PostgreSQL em `5432` quando a VPS tiver conectividade IPv6
-com o host direto do Supabase; se a VPS for IPv4-only, use Supavisor Session Mode
-também em `5432`. Mantenha `SUPABASE_DB_SSLMODE=require`.
+Para `supabase_source`, use somente credencial PostgreSQL read-only. O projeto atual já possui `supabase_read_only_user`; antes de produção, confirme novamente que ela mantém `default_transaction_read_only=on` e ausência de privilégios de escrita.
 
 ## 3. Primeira subida
-
-O script `docker/postgres/init/01-create-central.sql` roda apenas quando o volume
-PostgreSQL é criado pela primeira vez. Ele cria `sislac_app` e
-`sislac_central`. Os bancos dos laboratórios são criados posteriormente pelo
-Laravel.
-
-Suba primeiro somente o PostgreSQL, instale as dependências e prepare o banco
-central antes de expor a aplicação:
 
 ```bash
 docker compose build
@@ -128,87 +84,55 @@ docker compose run --rm app php artisan key:generate --force
 docker compose run --rm app php artisan migrate --database=central --force
 ```
 
-Crie o primeiro Super Admin explicitamente. A senha é solicitada de forma
-interativa e não é passada na linha de comando:
+Crie/promova o primeiro Super Admin de forma explícita:
 
 ```bash
 docker compose run --rm app php artisan admin:super-user SEU_EMAIL
 ```
 
-O comando solicita `Nome`, `Senha` e `Confirme a senha`. Para promover um
-usuário central já existente, execute o mesmo comando com o e-mail dele; a senha
-atual é preservada.
-
-Otimize a aplicação com o comando oficial do Laravel e suba os serviços web:
+Depois:
 
 ```bash
 docker compose run --rm app php artisan optimize
 docker compose up -d app nginx
 ```
 
-Para abrir o pgAdmin localmente na VPS, quando necessário:
+## 4. Validação antes de corte
+
+A integridade offline já pertence ao CI. A prova live deve ser executada apenas no ambiente confiável configurado com a credencial read-only:
 
 ```bash
-docker compose --profile tools up -d pgadmin
+docker compose run --rm app php artisan contract:supabase-live
 ```
 
-A porta `5050` não deve ser publicada para a internet; acesse-a por túnel SSH.
+Para auditar banco central criado por versões anteriores, sem remover nada:
 
-## 4. Nginx público e TLS
+```bash
+docker compose run --rm app php artisan platform:audit-unused-tables
+```
 
-O Nginx público é a borda confiável. Ele deve sobrescrever os headers de proxy
-recebidos do cliente; não preserve uma cadeia `X-Forwarded-For` fornecida pela
-internet.
+Se `plans` ou `subscriptions` aparecerem, revise dados/dependências antes de qualquer cleanup físico. O comando não executa `DROP`.
 
-Crie `/etc/nginx/sites-available/api.sislac.com.br`:
+## 5. Nginx/TLS
+
+A borda pública deve sobrescrever headers de proxy recebidos do cliente. Exemplo mínimo:
 
 ```nginx
-server {
-    listen 80;
-    server_name api.sislac.com.br;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name api.sislac.com.br;
-
-    ssl_certificate /etc/letsencrypt/live/api.sislac.com.br/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.sislac.com.br/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-
-    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "DENY" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-
-    client_max_body_size 30M;
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header X-Forwarded-Port 443;
-    }
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port 443;
 }
 ```
 
-Ative o site e emita o certificado:
+TLS 1.2+ e HSTS devem ser configurados no Nginx público.
 
-```bash
-ln -s /etc/nginx/sites-available/api.sislac.com.br /etc/nginx/sites-enabled/api.sislac.com.br
-nginx -t
-systemctl reload nginx
-certbot --nginx -d api.sislac.com.br
-```
-
-## 5. Atualizações
-
-Em cada deploy de código:
+## 6. Atualizações
 
 ```bash
 cd /home/sislac/sislac-api
@@ -220,25 +144,7 @@ docker compose run --rm app php artisan optimize
 docker compose up -d app nginx
 ```
 
-Migrations de tenant são aplicadas pelo fluxo de provisionamento para novos
-laboratórios. Qualquer atualização em massa de bancos existentes deve usar o
-comando/fluxo explicitamente validado para essa finalidade; não execute SQL
-manual em lote.
-
-## 6. Backup
-
-A fundação atual não instala um serviço externo de backup. Até existir uma
-solução operacional validada no repositório, faça backup do cluster para um
-destino seguro fora da VPS e teste a restauração periodicamente.
-
-Exemplo de dump manual do cluster:
-
-```bash
-docker compose exec -T postgres pg_dumpall -U "$DB_ROOT_USER" \
-  | gzip > "backup-$(date +%F-%H%M).sql.gz"
-```
-
-Não mantenha a única cópia do backup no mesmo servidor.
+Migrations tenant são aplicadas pelo fluxo explicitamente validado para os bancos dos laboratórios. Não execute SQL manual em lote.
 
 ## 7. Verificação pós-deploy
 
@@ -249,9 +155,11 @@ curl --fail --silent --show-error https://api.sislac.com.br/api/health
 
 Confirme também:
 
-- `5432`, `5050` e `8080` não estão acessíveis externamente;
-- `/admin/login` abre via HTTPS;
-- login do Super Admin funciona;
-- a listagem de laboratórios abre;
-- um provisionamento de homologação cria o banco físico, executa as migrations e termina com o laboratório ativo;
-- uma restauração de backup foi ensaiada em ambiente separado.
+- portas PostgreSQL/pgAdmin/Nginx interno não estão públicas;
+- `/admin/login` funciona via HTTPS;
+- Super Admin abre a listagem de laboratórios;
+- endpoint clínico sem Bearer retorna 401;
+- endpoint clínico com token Supabase válido e usuário central correlacionado chega à autorização tenant;
+- `contract:supabase-live` retorna Pacientes conforme usando a credencial read-only;
+- um provisionamento de homologação cria o banco físico e termina ativo;
+- restauração de backup foi ensaiada em ambiente separado.

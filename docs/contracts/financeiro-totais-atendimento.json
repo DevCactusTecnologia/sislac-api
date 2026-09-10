@@ -1,0 +1,80 @@
+{
+  "contract": "financeiro-totais-atendimento",
+  "version": 1,
+  "captured_at": "2026-09-10",
+  "scope": [
+    "subtotal-atendimento",
+    "desconto-total-atendimento",
+    "acrescimo-total-atendimento",
+    "total-atendimento",
+    "valor-original-exame"
+  ],
+  "authority": {
+    "database": "tenant-postgresql",
+    "calculator": "public.recompute_atendimento_completo",
+    "client_may_supply_derived_totals": false
+  },
+  "formula": {
+    "subtotal": "sum(coalesce(atendimento_exames.valor_original, atendimento_exames.valor)) where status <> cancelado",
+    "total": "sum(atendimento_exames.valor) where status <> cancelado",
+    "desconto_total": "greatest(subtotal - total, 0)",
+    "acrescimo_total": "greatest(total - subtotal, 0)"
+  },
+  "http": {
+    "POST /api/atendimentos": {
+      "must_be_missing": [
+        "subtotal",
+        "desconto_total",
+        "acrescimo_total",
+        "total",
+        "pagamentos"
+      ]
+    },
+    "PATCH /api/atendimentos/{id}": {
+      "must_be_missing": [
+        "subtotal",
+        "desconto_total",
+        "acrescimo_total",
+        "total",
+        "pagamentos"
+      ]
+    }
+  },
+  "valor_original": {
+    "may_be_defined_on_exam_creation": true,
+    "immutable_after_non_null": true,
+    "update_behavior": "preserve-old-value",
+    "source_parity": "public.guard_atendimento_exames_valor_original"
+  },
+  "invariants": {
+    "cancelled_exam_excluded_from_totals": true,
+    "derived_totals_persisted_by_backend": true,
+    "parallel_php_calculator": false,
+    "central_connection_for_clinical_financial_data": false
+  },
+  "sources": {
+    "supabase_live": {
+      "project": "eramenhnqcbyctyiqwlm",
+      "access": "read-only-conformance",
+      "objects": [
+        "public.atendimentos",
+        "public.atendimento_exames",
+        "public.recompute_atendimento_completo",
+        "public.guard_atendimento_exames_valor_original"
+      ]
+    },
+    "laravel_base": {
+      "repository": "DevCactusTecnologia/sislac-api",
+      "commit": "be446297802694941cc9159b3e0cc14f77fb5319",
+      "branch": "fase-financeiro-core"
+    }
+  },
+  "out_of_scope": [
+    "nova-calculadora-financeira",
+    "convenios-faturas",
+    "saidas",
+    "caixa",
+    "resumo-financeiro",
+    "frontend-cutover"
+  ]
+}

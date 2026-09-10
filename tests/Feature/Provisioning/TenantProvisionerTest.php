@@ -33,12 +33,13 @@ afterEach(function () {
     }
 });
 
-function provisioningControlConnection(): PDO
+function provisioningControlConnection(?string $database = null): PDO
 {
     $config = config('provisioning.database');
+    $database ??= (string) $config['maintenance_database'];
 
     return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $config['maintenance_database']),
+        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
         (string) $config['username'],
         (string) $config['password'],
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
@@ -79,13 +80,47 @@ it('ativa o tenant somente depois de criar banco migrar e executar smoke check',
         ->first();
 
     expect($run?->status)->toBe('succeeded')
-        ->and($run?->schema_version)->toBe('2026_09_07_000100_create_pacientes_table')
+        ->and($run?->schema_version)->toBe('2026_09_10_000800_harden_financeiro_saidas')
         ->and($run?->finished_at)->not->toBeNull();
 
     expect(DB::connection('central')->table('platform_audit')
         ->where('subject_id', $tenant->getKey())
         ->where('action', 'tenant.provisioned')
         ->exists())->toBeTrue();
+
+    $tenantDb = provisioningControlConnection($database);
+
+    foreach ([
+        'protocolo_sequence',
+        'atendimentos',
+        'atendimento_exames',
+        'atendimento_pagamentos',
+        'atendimento_audit',
+        'lab_config',
+        'caixa_sessoes',
+        'financeiro_saidas',
+    ] as $table) {
+        $statement = $tenantDb->prepare('SELECT to_regclass(?)');
+        $statement->execute(['public.'.$table]);
+        expect($statement->fetchColumn())->toBe($table);
+    }
+
+    expect($tenantDb->query('SELECT rotina_fluxo_modo FROM lab_config WHERE singleton_key = 1')?->fetchColumn())
+        ->toBe('completo');
+
+    $created = $tenantDb->query(<<<'SQL'
+        INSERT INTO atendimentos (paciente_nome, paciente_cpf)
+        VALUES ('Paciente Provisionado', '12345678901')
+        RETURNING id, protocolo
+    SQL)?->fetch(PDO::FETCH_ASSOC);
+
+    expect($created)->toBeArray()
+        ->and($created['protocolo'] ?? null)->toBeString()->toMatch('/^\d{7}$/');
+
+    $update = $tenantDb->prepare('UPDATE atendimentos SET protocolo = ? WHERE id = ?');
+
+    expect(fn () => $update->execute(['9999999', $created['id'] ?? 0]))
+        ->toThrow(PDOException::class, 'protocolo do atendimento é imutável');
 });
 
 it('permite retry sem criar um segundo banco para o mesmo tenant', function () {

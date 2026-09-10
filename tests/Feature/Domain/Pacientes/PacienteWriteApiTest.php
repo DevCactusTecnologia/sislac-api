@@ -5,6 +5,7 @@ use App\Platform\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -49,8 +50,17 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
+    config()->set('services.supabase.url', 'https://example.supabase.co');
+    config()->set('services.supabase.publishable_key', 'test-publishable-key');
+    Http::fake([
+        'https://example.supabase.co/auth/v1/user' => Http::response([
+            'id' => $this->writeUser->getKey(),
+            'email' => $this->writeUser->email,
+        ], 200),
+    ]);
+
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->actingAs($this->writeUser, 'web');
+    $this->withToken('pacientes-write-test-token');
 });
 
 afterEach(function () {

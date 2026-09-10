@@ -1,93 +1,72 @@
 {
-  "version": 1,
-  "captured_at": "2026-09-07",
+  "version": 3,
+  "captured_at": "2026-09-10",
   "frontend": {
     "repository": "DevCactusTecnologia/sislacprivado",
-    "sha": "0760c6123f3062842eaff5f7304b6460c00c058d"
+    "sha": "5f3adbab91631e2b459bb83e20ae6eef79b5f8b6"
   },
   "supabase": {
     "project_ref": "eramenhnqcbyctyiqwlm",
-    "postgres_major": 17
+    "postgres_major": 17,
+    "runtime": "single-tenant"
   },
-  "source_fingerprints": {
-    "types_ts_blob": "a9f735e43e08e3625758741ccb9efe4257bc5dd2",
-    "runtime_contract_script_blob": "a039b5f9a3bb2f513df9cb01d8a044609e7016e4",
-    "storage_inventory_blob": "5cfc75f2669ff9a9f1e8bd86b39e72fa4ba0e649",
-    "edge_functions_tree": "3c47b84c1b6f3ed02b0a8757e529ff30cb3841f1"
-  },
-  "schema_inventory": {
-    "tables": 96,
-    "views": 2,
-    "enums": 6,
-    "rls_enabled_tables": 96,
-    "rls_disabled_tables": 0
-  },
-  "runtime_contract": {
-    "tables_views_consumed": 77,
-    "rpcs_consumed": 52,
-    "edge_functions_consumed": 23,
-    "buckets_consumed": 4,
-    "realtime_tables": [
-      "atendimento_exames",
-      "atendimento_pagamentos",
-      "atendimentos"
-    ]
-  },
-  "storage_inventory": [
-    "assinaturas",
-    "documentos-pdf",
-    "integration-assets",
-    "integration-pdfs",
-    "painel-galeria",
-    "resultados-externos",
-    "tenant-assets"
+  "migrated_contracts": [
+    {
+      "name": "pacientes",
+      "relations": ["public.pacientes"],
+      "routines": []
+    },
+    {
+      "name": "atendimentos",
+      "relations": [
+        "public.atendimentos",
+        "public.atendimento_exames",
+        "public.atendimento_pagamentos",
+        "public.atendimento_audit"
+      ],
+      "routines": ["public.recompute_atendimento_completo(bigint)"]
+    },
+    {
+      "name": "rotina",
+      "relations": ["public.lab_config", "public.atendimento_exames"],
+      "routines": []
+    },
+    {
+      "name": "financeiro-core",
+      "relations": [
+        "public.atendimentos",
+        "public.atendimento_exames",
+        "public.atendimento_pagamentos",
+        "public.financeiro_estornos",
+        "public.financeiro_entradas"
+      ],
+      "routines": [
+        "public.financeiro_a_receber_v2(text,text,timestamp with time zone,timestamp with time zone,text,timestamp with time zone,bigint,integer)",
+        "public.financeiro_estornar(text,bigint,text)"
+      ]
+    },
+    {
+      "name": "financeiro-totais-atendimento",
+      "relations": ["public.atendimentos", "public.atendimento_exames"],
+      "routines": ["public.recompute_atendimento_completo(bigint)"]
+    },
+    {
+      "name": "financeiro-caixa-operacional",
+      "relations": [
+        "public.caixa_sessoes",
+        "public.atendimento_pagamentos",
+        "public.financeiro_saidas"
+      ],
+      "routines": [
+        "public.caixa_abrir(text,numeric,text)",
+        "public.caixa_fechar(bigint,text)"
+      ]
+    },
+    {
+      "name": "financeiro-saidas",
+      "relations": ["public.financeiro_saidas", "public.financeiro_estornos"],
+      "routines": ["public.financeiro_estornar(text,bigint,text)"]
+    }
   ],
-  "edge_function_inventory": [
-    "admin-delete-user",
-    "admin-invite-user",
-    "admin-update-user",
-    "ai-suggest-exames",
-    "assinatura-url",
-    "comprovante-resolve",
-    "comprovante-shortlink",
-    "consultar-resultado-publico",
-    "create-atendimento",
-    "dbsync-test-connection",
-    "elevenlabs-tts",
-    "extract-requisicao-exames",
-    "image-url",
-    "integration-dispatch",
-    "integration-job-action",
-    "integration-jobs-runner",
-    "integration-pdf-resolve",
-    "integration-pdf-url",
-    "integration-poll-results",
-    "integration-save-credentials",
-    "integration-test-connection",
-    "lab-apoio-adapter",
-    "lab-apoio-upload-pdf",
-    "laudo-publico-hidratado",
-    "log-client-error",
-    "ops-monitor",
-    "provider-health-aggregator",
-    "render-resultado-publico",
-    "storage-backup-manifest",
-    "update-atendimento",
-    "upload-assinatura",
-    "upload-image",
-    "upload-pdf"
-  ],
-  "known_findings": {
-    "security": [
-      "authenticated_security_definer_function_executable:create_atendimento_tx",
-      "authenticated_security_definer_function_executable:update_atendimento_tx",
-      "auth_compromised_credential_check_disabled"
-    ],
-    "performance": [
-      "auth_rls_initplan",
-      "multiple_permissive_policies",
-      "duplicate_index"
-    ]
-  },
-  "sha256": "6058a22ca38b19b252403b9e207c81010eb86a0f997be05454eb574db2af4933"
+  "sha256": "9d1994d10be1032276a3a8d807793524af14341baddf025c28d6fa20703cf510"
 }

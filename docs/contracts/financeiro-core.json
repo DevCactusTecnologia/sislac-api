@@ -1,0 +1,90 @@
+{
+  "contract": "financeiro-core",
+  "version": 1,
+  "captured_at": "2026-09-09",
+  "scope": [
+    "pacientes-a-receber",
+    "pacientes-recebimentos",
+    "registro-pagamento-paciente",
+    "estorno-pagamento-paciente"
+  ],
+  "sources": {
+    "supabase_live": {
+      "objects": [
+        "public.atendimentos",
+        "public.atendimento_exames",
+        "public.atendimento_pagamentos",
+        "public.financeiro_estornos",
+        "public.financeiro_entradas",
+        "public.financeiro_a_receber_v2",
+        "private.financeiro_estornar"
+      ],
+      "access": "read-only-conformance"
+    },
+    "frontend": {
+      "repository": "DevCactusTecnologia/sislacprivado",
+      "commit": "57cc9be96703a41b207d530088369da1cc23cd94",
+      "files": [
+        "src/hooks/useAReceberPacientes.ts",
+        "src/data/financeiroStore.ts"
+      ]
+    },
+    "laravel_base": {
+      "repository": "DevCactusTecnologia/sislac-api",
+      "commit": "62ccf76820902c530c1c2ec6b7a2b7b9cfb44f8c",
+      "branch": "feat/rotina-fluxo-operacional"
+    }
+  },
+  "http": {
+    "GET /api/financeiro/a-receber/pacientes": {
+      "permission": "visualizar_atendimentos",
+      "filters": ["search", "date_from", "date_to", "status", "cursor_data", "cursor_id", "limit"],
+      "order": ["data desc", "id desc"]
+    },
+    "GET /api/financeiro/recebimentos/pacientes": {
+      "permission": "visualizar_atendimentos",
+      "filters": ["search", "date_from", "date_to", "cursor_data", "cursor_id", "limit"],
+      "order": ["data desc", "pagamento_id desc"]
+    },
+    "POST /api/financeiro/atendimentos/{id}/pagamentos": {
+      "permission": "registrar_pagamento",
+      "accepted_fields": ["tipo", "valor", "data", "observacao"]
+    },
+    "POST /api/financeiro/pagamentos/{id}/estorno": {
+      "permission": "gestao_financeira",
+      "accepted_fields": ["motivo"]
+    }
+  },
+  "invariants": {
+    "patient_debt": "sum(atendimento_exames.valor where status <> cancelado and cobranca_destino <> convenio)",
+    "patient_paid": "sum(atendimento_pagamentos.valor where status_pagamento <> estornado)",
+    "patient_balance": "max(patient_debt - patient_paid, 0)",
+    "payment_append_only": true,
+    "payment_delete_forbidden": true,
+    "payment_business_fields_immutable": true,
+    "payment_only_allowed_update": "status_pagamento -> estornado",
+    "overpayment_forbidden": true,
+    "reversal_requires_reason": true,
+    "reversal_unique_by_origin": ["origem_tipo", "origem_id"],
+    "reversal_append_only": true,
+    "cancelled_appointment_receipts_hidden": true,
+    "receipts_exclude_reversal_record": true,
+    "patch_atendimento_may_mutate_payments": false
+  },
+  "known_source_divergences": [
+    {
+      "source": "public.financeiro_a_receber_v2",
+      "issue": "A CTE base soma exame cobrado do paciente sem excluir atendimento_exames.status = cancelado.",
+      "decision": "Laravel não replica essa divergência; exame cancelado não gera dívida.",
+      "authority": "A função canônica recompute_atendimento_completo já exclui exames cancelados ao calcular total_devido_paciente, e essa mesma invariante é usada pelo domínio Atendimentos Laravel."
+    }
+  ],
+  "out_of_scope": [
+    "convenios",
+    "faturas-convenio",
+    "saidas",
+    "caixa",
+    "financeiro-resumo",
+    "frontend-cutover"
+  ]
+}
