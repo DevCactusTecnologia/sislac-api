@@ -3,8 +3,9 @@
 namespace App\Domain\Financeiro\Queries;
 
 use App\Domain\Financeiro\Models\FinanceiroSaida;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Carbon;
 use InvalidArgumentException;
 use JsonException;
 
@@ -35,11 +36,11 @@ final class ListFinanceiroSaidas
         }
 
         if (isset($filters['date_from']) && is_string($filters['date_from'])) {
-            $query->where('data', '>=', Carbon::parse($filters['date_from'])->startOfDay());
+            $query->where('data', '>=', CarbonImmutable::parse($filters['date_from'])->startOfDay());
         }
 
         if (isset($filters['date_to']) && is_string($filters['date_to'])) {
-            $query->where('data', '<', Carbon::parse($filters['date_to'])->addDay()->startOfDay());
+            $query->where('data', '<', CarbonImmutable::parse($filters['date_to'])->addDay()->startOfDay());
         }
 
         if (isset($filters['cursor']) && is_string($filters['cursor']) && $filters['cursor'] !== '') {
@@ -66,7 +67,7 @@ final class ListFinanceiroSaidas
     private function encodeCursor(FinanceiroSaida $saida): string
     {
         $data = $saida->getAttribute('data');
-        if (! $data instanceof Carbon) {
+        if (! $data instanceof CarbonInterface) {
             throw new InvalidArgumentException('Saída sem data válida para paginação.');
         }
 
