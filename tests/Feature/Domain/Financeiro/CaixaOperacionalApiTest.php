@@ -184,7 +184,7 @@ it('vincula automaticamente somente dinheiro e pix ao caixa aberto da unidade', 
     }
 
     $rows = $pdo->query(sprintf(
-        "SELECT tipo, caixa_sessao_id FROM atendimento_pagamentos WHERE atendimento_id = %d ORDER BY id",
+        'SELECT tipo, caixa_sessao_id FROM atendimento_pagamentos WHERE atendimento_id = %d ORDER BY id',
         $atendimentoId,
     ))?->fetchAll(PDO::FETCH_ASSOC);
 
