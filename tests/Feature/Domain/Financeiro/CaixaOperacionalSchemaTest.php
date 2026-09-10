@@ -130,13 +130,14 @@ it('impede movimento explicitamente vinculado a sessão fechada', function () {
 
 it('não permite delete físico de saída financeira', function () {
     $pdo = caixaSchemaControlConnection($this->caixaSchemaDatabase);
-    $pdo->exec(<<<'SQL'
+    $saidaId = (int) $pdo->query(<<<'SQL'
         INSERT INTO financeiro_saidas
-            (protocolo, descricao, valor, tipo_despesa, destino_pagamento)
-        VALUES ('SAI-SCHEMA-001', 'Despesa', 10, 'Outros', 'Fornecedor')
-    SQL);
+            (descricao, valor, tipo_despesa, destino_pagamento)
+        VALUES ('Despesa', 10, 'Outros', 'Fornecedor')
+        RETURNING id
+    SQL)?->fetchColumn();
 
-    expect(fn () => $pdo->exec("DELETE FROM financeiro_saidas WHERE protocolo = 'SAI-SCHEMA-001'"))
+    expect(fn () => $pdo->exec("DELETE FROM financeiro_saidas WHERE id = {$saidaId}"))
         ->toThrow(PDOException::class, 'use estorno');
 });
 
