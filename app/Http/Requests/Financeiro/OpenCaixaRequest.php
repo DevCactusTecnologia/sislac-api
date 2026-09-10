@@ -37,6 +37,12 @@ final class OpenCaixaRequest extends FormRequest
         return [
             'unidade_id' => ['required', 'string', 'min:1', 'max:255'],
             'valor_abertura' => ['sometimes', 'numeric', 'gte:0', 'decimal:0,2'],
+            'responsavel_id' => ['missing'],
+            'status' => ['missing'],
+            'aberta_em' => ['missing'],
+            'fechada_em' => ['missing'],
+            'valor_fechamento' => ['missing'],
+            'fechado_por' => ['missing'],
             'observacoes' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ];
     }
