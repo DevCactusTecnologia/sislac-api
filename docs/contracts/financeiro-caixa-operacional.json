@@ -1,6 +1,6 @@
 {
   "contract": "financeiro-caixa-operacional",
-  "version": 1,
+  "version": 2,
   "captured_at": "2026-09-10",
   "scope": [
     "caixa-sessao-por-unidade",
@@ -30,6 +30,19 @@
     "one_open_per_unit": true,
     "database_constraint": "uq_caixa_sessao_aberta_por_unidade",
     "open_value_must_be_non_negative": true,
+    "open_client_writable_fields": [
+      "unidade_id",
+      "valor_abertura",
+      "observacoes"
+    ],
+    "open_server_owned_fields_rejected": [
+      "responsavel_id",
+      "status",
+      "aberta_em",
+      "fechada_em",
+      "valor_fechamento",
+      "fechado_por"
+    ],
     "physical_delete": "blocked",
     "close_is_legitimate_update": true
   },
@@ -41,6 +54,8 @@
     "other_types_auto_attach": false,
     "absence_of_open_session": "payment-remains-valid-with-null-caixa_sessao_id",
     "closed_session_accepts_new_linked_movement": false,
+    "reversal_authority": "financeiro_estornos",
+    "legacy_status_estornado_defense": true,
     "reversed_count_in_close": false
   },
   "close": {
@@ -48,6 +63,22 @@
     "calculation": "tenant-postgresql-numeric",
     "transaction": true,
     "pessimistic_lock": true,
+    "client_writable_fields": [
+      "observacoes"
+    ],
+    "server_owned_fields_rejected": [
+      "sessao_id",
+      "unidade_id",
+      "valor_abertura",
+      "valor_fechamento",
+      "entradas_dinheiro",
+      "entradas_pix",
+      "saidas",
+      "saldo_final",
+      "status",
+      "fechada_em",
+      "fechado_por"
+    ],
     "repeat": "409-without-history-rewrite"
   },
   "outputs": {
@@ -70,7 +101,8 @@
       "objects": [
         "public.caixa_sessoes",
         "public.financeiro_saidas",
-        "public.atendimento_pagamentos"
+        "public.atendimento_pagamentos",
+        "public.financeiro_estornos"
       ]
     },
     "laravel_base": {
