@@ -1,6 +1,6 @@
 # Arquitetura — SISLAC API
 
-A especificação normativa desta migração é `docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`, complementada pela Fase 0 aprovada em `docs/superpowers/specs/2026-09-08-fase-0-saneamento-fundacao-design.md`. A onda de Rotina / Fluxo Operacional é especificada em `docs/superpowers/specs/2026-09-09-rotina-fluxo-operacional-design.md`. Documentação oficial Laravel 13, PostgreSQL, Supabase e `stancl/tenancy` prevalece sobre comportamento legado.
+A especificação normativa desta migração é `docs/superpowers/specs/2026-09-06-laravel-supabase-conformance-design.md`, complementada pela Fase 0 aprovada em `docs/superpowers/specs/2026-09-08-fase-0-saneamento-fundacao-design.md`. A onda de Rotina / Fluxo Operacional é especificada em `docs/superpowers/specs/2026-09-09-rotina-fluxo-operacional-design.md`. O contrato da subfase Financeiro Core está em `docs/contracts/financeiro-core.json` e sua descrição em `docs/financeiro-core.md`. Documentação oficial Laravel 13, PostgreSQL, Supabase e `stancl/tenancy` prevalece sobre comportamento legado.
 
 ## Objetivo
 
@@ -104,7 +104,7 @@ Dados clínicos permanecem nos bancos tenant, nunca duplicados no central.
 
 ## Domínio do laboratório
 
-`app/Domain` contém as regras que operam no banco dedicado do laboratório. Pacientes é a primeira onda concluída. Atendimentos e Rotina / Fluxo Operacional estão implementados em branches encadeadas e permanecem isolados do `main` e do cutover do frontend até que as ondas dependentes e seus gates sejam concluídos.
+`app/Domain` contém as regras que operam no banco dedicado do laboratório. Pacientes é a primeira onda concluída. Atendimentos, Rotina / Fluxo Operacional e Financeiro Core estão implementados em branches encadeadas e permanecem isolados do `main` e do cutover do frontend até que as ondas dependentes e seus gates sejam concluídos.
 
 ### Atendimentos
 
@@ -152,7 +152,42 @@ A troca de modo é transacional: bloqueia `lab_config`, persiste a configuraçã
 
 A cadeia de segurança continua sendo Bearer Supabase → usuário central já correlacionado → membership ativa → tenant autorizado → permissão específica. A onda adiciona `registrar_coleta`, `analisar_amostra` e `configuracoes_sistema`; não existe auto-provisionamento por token nem autorização a partir de metadata do Supabase.
 
-Esta implementação não inclui o frontend `sislacprivado`, cutover, resultados/PDF, estoque, laboratório de apoio, Financeiro/Convênios/Caixa, Redis, WebSocket, CQRS ou event bus. Essas responsabilidades permanecem em ondas próprias.
+Esta implementação de Rotina não inclui o frontend `sislacprivado`, cutover, resultados/PDF, estoque, laboratório de apoio, Financeiro/Convênios/Caixa, Redis, WebSocket, CQRS ou event bus. Essas responsabilidades permanecem em ondas próprias.
+
+### Financeiro Core — pacientes
+
+O Financeiro Core não cria um livro paralelo de entradas. A cobrança do paciente continua derivada do agregado de Atendimentos:
+
+```text
+valor devido = exames ativos cobrados do paciente
+valor pago   = pagamentos não estornados
+saldo        = valor devido - valor pago
+```
+
+Exame `cancelado` e exame com `cobranca_destino = 'convenio'` não compõem dívida do paciente. Essa regra é aplicada tanto nas consultas quanto na proteção contra sobrepagamento.
+
+As rotas são:
+
+```text
+GET  /api/financeiro/a-receber/pacientes
+GET  /api/financeiro/recebimentos/pacientes
+POST /api/financeiro/atendimentos/{id}/pagamentos
+POST /api/financeiro/pagamentos/{id}/estorno
+```
+
+A Receber e Recebimentos são consultas derivadas. A primeira preserva o contrato útil de `financeiro_a_receber_v2`; a segunda replica a parcela de pacientes da view live `financeiro_entradas`. O Supabase permanece somente como baseline read-only nessa subfase.
+
+Registro de pagamento exige `registrar_pagamento`, bloqueia o atendimento com `FOR UPDATE`, recalcula o saldo dentro da mesma transação e cria sempre uma nova linha. O PostgreSQL repete a invariante crítica em trigger, impedindo sobrepagamento mesmo fora da API.
+
+Estorno exige `gestao_financeira`, bloqueia o pagamento com `FOR UPDATE`, preserva a linha original, altera somente `status_pagamento` para `estornado` e cria uma linha única em `financeiro_estornos`. O livro de estornos é append-only. A recepção mantém `registrar_pagamento`, mas não recebe `gestao_financeira` implicitamente.
+
+Pagamento efetivo passa a ser histórico: campos de negócio são imutáveis, `DELETE` físico é rejeitado e a única atualização permitida é a transição irreversível para `estornado`. Por consequência, `PATCH /api/atendimentos/{id}` exige que o campo `pagamentos` esteja ausente e `UpdateAtendimento` não substitui mais pagamentos.
+
+As funções de trigger novas usam `SECURITY INVOKER`, `search_path = ''` e nomes schema-qualified. Não há `SECURITY DEFINER`, Redis, fila, event bus ou novo serviço para esta subfase.
+
+A divergência conhecida do baseline está documentada em `docs/financeiro-core.md`: `financeiro_a_receber_v2` live ainda soma exame cancelado cobrado do paciente, enquanto `recompute_atendimento_completo` já o exclui. O Laravel segue a invariante canônica do recompute e não replica o defeito.
+
+Convênios/faturas, Saídas, Caixa, resumo financeiro e cutover do frontend continuam fora do Financeiro Core.
 
 ## Fronteira Platform ↔ Domain
 
