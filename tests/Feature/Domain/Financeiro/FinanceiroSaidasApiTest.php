@@ -210,5 +210,5 @@ it('exige gestão financeira para criar saída', function () {
 
 it('não expõe endpoint delete de saída', function () {
     $this->deleteJson('/api/financeiro/saidas/1')
-        ->assertMethodNotAllowed();
+        ->assertNotFound();
 });
