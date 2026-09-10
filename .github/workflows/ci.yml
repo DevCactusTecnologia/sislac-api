@@ -86,14 +86,11 @@ jobs:
       - name: Integridade do manifesto Supabase
         run: php scripts/check-supabase-contract.php
 
-      - name: Pint — formatação
-        run: vendor/bin/pint --test --diff
-
-      - name: Larastan — análise estática nível 8
-        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
-
-      - name: Pest — testes
-        run: vendor/bin/pest --parallel --colors=always
+      - name: Pint — diagnóstico de formatação
+        run: |
+          vendor/bin/pint x.php database/migrations/tenant/2026_09_09_000500_add_financeiro_core.php
+          git diff -- x.php database/migrations/tenant/2026_09_09_000500_add_financeiro_core.php
+          exit 1
 
   guards:
     name: Guards de repositório
