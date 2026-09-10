@@ -103,14 +103,15 @@ function totaisInsertExame(
     string $valor,
     string $valorOriginal,
     string $status = 'pendente',
+    string $nome = 'Exame Totais',
 ): int {
     $statement = $pdo->prepare(<<<'SQL'
         INSERT INTO atendimento_exames
             (atendimento_id, nome_exame, valor, valor_original, status, tipo_processo, amostra_seq, cobranca_destino)
-        VALUES (?, 'Exame Totais', ?, ?, ?, 'INTERNO', 1, 'paciente')
+        VALUES (?, ?, ?, ?, ?, 'INTERNO', 1, 'paciente')
         RETURNING id
     SQL);
-    $statement->execute([$atendimentoId, $valor, $valorOriginal, $status]);
+    $statement->execute([$atendimentoId, $nome, $valor, $valorOriginal, $status]);
 
     return (int) $statement->fetchColumn();
 }
@@ -165,8 +166,8 @@ it('deriva acréscimo a partir de valor_original e valor sem cálculo paralelo',
 it('mantém desconto e acréscimo líquidos quando ajustes opostos se compensam', function () {
     $pdo = totaisControlConnection($this->totaisDatabase);
     $atendimentoId = totaisCreateAtendimento($pdo);
-    totaisInsertExame($pdo, $atendimentoId, '90.00', '100.00');
-    totaisInsertExame($pdo, $atendimentoId, '60.00', '50.00');
+    totaisInsertExame($pdo, $atendimentoId, '90.00', '100.00', 'pendente', 'Exame com desconto');
+    totaisInsertExame($pdo, $atendimentoId, '60.00', '50.00', 'pendente', 'Exame com acréscimo');
 
     expect(totaisReadParent($pdo, $atendimentoId))->toBe([
         'subtotal' => '150.00',
@@ -179,8 +180,8 @@ it('mantém desconto e acréscimo líquidos quando ajustes opostos se compensam'
 it('exclui exame cancelado do subtotal e do total', function () {
     $pdo = totaisControlConnection($this->totaisDatabase);
     $atendimentoId = totaisCreateAtendimento($pdo);
-    totaisInsertExame($pdo, $atendimentoId, '80.00', '100.00');
-    totaisInsertExame($pdo, $atendimentoId, '999.00', '999.00', 'cancelado');
+    totaisInsertExame($pdo, $atendimentoId, '80.00', '100.00', 'pendente', 'Exame ativo');
+    totaisInsertExame($pdo, $atendimentoId, '999.00', '999.00', 'cancelado', 'Exame cancelado');
 
     expect(totaisReadParent($pdo, $atendimentoId))->toBe([
         'subtotal' => '100.00',
