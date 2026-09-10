@@ -4,7 +4,6 @@ namespace App\Domain\Atendimentos\Actions;
 
 use App\Domain\Atendimentos\Models\Atendimento;
 use App\Domain\Atendimentos\Models\AtendimentoExame;
-use App\Domain\Atendimentos\Models\AtendimentoPagamento;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use LogicException;
@@ -45,12 +44,6 @@ final class CreateAtendimento
                     $exame = new AtendimentoExame;
                     $exame->fill($attributes);
                     $atendimento->exames()->save($exame);
-                }
-
-                foreach ($this->pagamentos($payload) as $attributes) {
-                    $pagamento = new AtendimentoPagamento;
-                    $pagamento->fill($attributes);
-                    $atendimento->pagamentos()->save($pagamento);
                 }
 
                 return $this->result($atendimento->refresh(), false);
@@ -165,38 +158,6 @@ final class CreateAtendimento
                 $attributes['valor_original'] = $attributes['valor'] ?? 0;
             }
 
-            $result[] = $attributes;
-        }
-
-        return $result;
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     * @return list<array<string, mixed>>
-     */
-    private function pagamentos(array $payload): array
-    {
-        $rows = $payload['pagamentos'] ?? [];
-
-        if (! is_array($rows)) {
-            return [];
-        }
-
-        $result = [];
-
-        foreach ($rows as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-
-            $attributes = $this->only($row, [
-                'tipo',
-                'valor',
-                'data',
-                'observacao',
-            ]);
-            $attributes['status_pagamento'] = 'efetuado';
             $result[] = $attributes;
         }
 
