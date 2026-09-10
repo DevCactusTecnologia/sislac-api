@@ -153,3 +153,13 @@ it('proíbe DELETE físico de pagamento e orienta uso de estorno', function () {
 
     expect((int) $pdo->query("SELECT count(*) FROM atendimento_pagamentos WHERE id = {$seed['pagamento_id']}")?->fetchColumn())->toBe(1);
 });
+
+it('impede sobrepagamento mesmo por escrita direta no banco', function () {
+    $pdo = financeiroSchemaControlConnection($this->financeiroSchemaDatabase);
+    $seed = financeiroSchemaSeedPayment($pdo);
+
+    expect(fn () => $pdo->exec("INSERT INTO atendimento_pagamentos (atendimento_id, tipo, valor) VALUES ({$seed['atendimento_id']}, 'Dinheiro', 50.01)"))
+        ->toThrow(PDOException::class);
+
+    expect((string) $pdo->query("SELECT COALESCE(SUM(valor), 0)::numeric(14,2) FROM atendimento_pagamentos WHERE atendimento_id = {$seed['atendimento_id']} AND COALESCE(status_pagamento, 'efetuado') <> 'estornado'")?->fetchColumn())->toBe('50.00');
+});
