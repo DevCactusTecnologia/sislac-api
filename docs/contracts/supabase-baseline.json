@@ -3,7 +3,7 @@
   "captured_at": "2026-09-10",
   "frontend": {
     "repository": "DevCactusTecnologia/sislacprivado",
-    "sha": "57cc9be96703a41b207d530088369da1cc23cd94"
+    "sha": "5f3adbab91631e2b459bb83e20ae6eef79b5f8b6"
   },
   "supabase": {
     "project_ref": "eramenhnqcbyctyiqwlm",
@@ -68,5 +68,5 @@
       "routines": ["public.financeiro_estornar(text,bigint,text)"]
     }
   ],
-  "sha256": "765241708b7842571b51fe258d207b687c20717a13b5fbc85659bac62fcd2555"
+  "sha256": "9d1994d10be1032276a3a8d807793524af14341baddf025c28d6fa20703cf510"
 }
