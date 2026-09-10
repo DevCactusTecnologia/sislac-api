@@ -87,7 +87,7 @@ jobs:
         run: php scripts/check-supabase-contract.php
 
       - name: Pint — formatação
-        run: vendor/bin/pint --test
+        run: vendor/bin/pint --test --diff
 
       - name: Larastan — análise estática nível 8
         run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
