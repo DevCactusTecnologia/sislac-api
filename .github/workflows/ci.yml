@@ -17,17 +17,17 @@ jobs:
   quality:
     name: Qualidade PHP
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     services:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_USER: sislac_app
-          POSTGRES_PASSWORD: sislac_ci
-          POSTGRES_DB: sislac_central
+          POSTGRES_USER: sislac_test
+          POSTGRES_PASSWORD: sislac_test
+          POSTGRES_DB: sislac_test
         options: >-
-          --health-cmd="pg_isready -U sislac_app -d sislac_central"
+          --health-cmd="pg_isready -U sislac_test -d sislac_test"
           --health-interval=5s
           --health-timeout=3s
           --health-retries=10
@@ -36,16 +36,13 @@ jobs:
 
     env:
       APP_ENV: testing
-      DB_CONNECTION: central
+      DB_CONNECTION: pgsql
       DB_HOST: 127.0.0.1
       DB_PORT: 5432
-      DB_DATABASE: sislac_central
-      DB_USERNAME: sislac_app
-      DB_PASSWORD: sislac_ci
-      TENANT_DB_HOST: 127.0.0.1
-      TENANT_DB_PORT: 5432
-      TENANT_DB_USERNAME: sislac_app
-      TENANT_DB_PASSWORD: sislac_ci
+      DB_DATABASE: sislac_test
+      DB_USERNAME: sislac_test
+      DB_PASSWORD: sislac_test
+      DB_SSLMODE: disable
 
     steps:
       - uses: actions/checkout@v4
@@ -83,8 +80,13 @@ jobs:
           cp .env.example .env
           php artisan key:generate --ansi
 
-      - name: Integridade do manifesto Supabase
-        run: php scripts/check-supabase-contract.php
+      - name: Cliente PostgreSQL
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Fixture PostgreSQL compatível com Supabase
+        env:
+          PGPASSWORD: sislac_test
+        run: psql -h 127.0.0.1 -U sislac_test -d sislac_test -v ON_ERROR_STOP=1 -f tests/Fixtures/supabase-test-schema.sql
 
       - name: Pint — formatação
         run: vendor/bin/pint --test
@@ -101,18 +103,19 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
       - name: ripgrep
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
-      - name: Fronteira Platform ↔ Domain
-        run: bash scripts/check-no-central-in-tenant.sh
+
       - name: Escopo do backend
         run: bash scripts/check-backend-scope.sh
-      - name: Bootstrap PostgreSQL do compose
-        run: bash scripts/check-postgres-bootstrap.sh
+
       - name: Contrato PostgreSQL-only
         run: bash scripts/check-database-contract.sh
+
       - name: Nenhum arquivo acima de 500 KiB
         run: bash scripts/check-file-size.sh
+
       - name: Nenhum .env comitado
         run: |
           if git ls-files | grep -E '(^|/)\.env(\.|$)' | grep -v '\.env\.example$'; then
