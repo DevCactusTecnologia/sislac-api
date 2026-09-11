@@ -238,7 +238,7 @@ final class UpdateAtendimento
         $reason = $payload['motivo_cancelamento'] ?? null;
         $reason = is_string($reason) ? $reason : '';
 
-        $atendimento->motivo_cancelamento = $reason;
+        $atendimento->setAttribute('motivo_cancelamento', $reason);
         $atendimento->save();
 
         $atendimento->exames()
