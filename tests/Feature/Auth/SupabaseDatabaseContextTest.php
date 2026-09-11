@@ -22,6 +22,8 @@ beforeEach(function () {
             END
             $$;
         SQL);
+        DB::statement('CREATE TABLE IF NOT EXISTS public.__supabase_rls_rollback_probe (id uuid PRIMARY KEY)');
+        DB::statement('GRANT SELECT, INSERT, DELETE ON public.__supabase_rls_rollback_probe TO authenticated');
     } finally {
         DB::selectOne('SELECT pg_advisory_unlock(90711001)');
     }
@@ -84,10 +86,12 @@ it('aplica identidade Supabase e role authenticated somente dentro da transaçã
 });
 
 it('faz rollback e não deixa contexto RLS vazar quando o endpoint falha', function () {
+    $probeId = '33333333-3333-4333-8333-333333333333';
+    DB::table('__supabase_rls_rollback_probe')->where('id', $probeId)->delete();
+
     Route::middleware(['supabase.auth', 'supabase.db'])
-        ->get('/_test/supabase-db-context-failure', function () {
-            DB::statement('CREATE TEMP TABLE __rls_rollback_probe (id integer)');
-            DB::table('__rls_rollback_probe')->insert(['id' => 1]);
+        ->get('/_test/supabase-db-context-failure', function () use ($probeId) {
+            DB::table('__supabase_rls_rollback_probe')->insert(['id' => $probeId]);
 
             throw new RuntimeException('falha simulada');
         });
@@ -99,11 +103,10 @@ it('faz rollback e não deixa contexto RLS vazar quando o endpoint falha', funct
     $after = DB::selectOne(<<<'SQL'
         SELECT
             current_user AS db_role,
-            current_setting('request.jwt.claim.sub', true) AS jwt_sub,
-            to_regclass('pg_temp.__rls_rollback_probe') AS rollback_probe
+            current_setting('request.jwt.claim.sub', true) AS jwt_sub
     SQL);
 
     expect((string) ($after?->db_role ?? ''))->not->toBe('authenticated')
         ->and((string) ($after?->jwt_sub ?? ''))->not->toBe('22222222-2222-4222-8222-222222222222')
-        ->and($after?->rollback_probe)->toBeNull();
+        ->and(DB::table('__supabase_rls_rollback_probe')->where('id', $probeId)->exists())->toBeFalse();
 });
