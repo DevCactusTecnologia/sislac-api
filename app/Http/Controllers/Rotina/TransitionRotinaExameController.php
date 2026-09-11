@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Rotina;
 
 use App\Domain\Atendimentos\Actions\TransitionAtendimentoExame;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\AuthenticateSupabaseUser;
 use App\Http\Requests\Rotina\TransitionRotinaExameRequest;
 use App\Platform\Authorization\MembershipAuthorizer;
 use App\Platform\Authorization\TenantPermission;
 use App\Platform\Models\User;
+use App\Platform\Supabase\SupabasePrincipal;
 use DomainException;
 use Illuminate\Http\JsonResponse;
 use LogicException;
@@ -22,10 +24,10 @@ final class TransitionRotinaExameController extends Controller
     ): JsonResponse {
         $payload = $request->validated();
         $action = $payload['acao'] ?? null;
-        $user = $request->user();
+        $principal = $request->attributes->get(AuthenticateSupabaseUser::REQUEST_ATTRIBUTE);
         $tenantId = $request->attributes->get('tenant_id');
 
-        if (! is_string($action) || ! $user instanceof User || ! is_string($tenantId)) {
+        if (! is_string($action) || ! $principal instanceof SupabasePrincipal || ! is_string($tenantId)) {
             return response()->json(['message' => 'Acesso não autorizado.'], 403);
         }
 
@@ -36,16 +38,21 @@ final class TransitionRotinaExameController extends Controller
             default => throw new LogicException('Ação de rotina não reconhecida.'),
         };
 
-        $userId = (string) $user->getKey();
+        $userId = $principal->getKey();
 
         if (! $authorizer->allows($userId, $tenantId, $permission)) {
             return response()->json(['message' => 'Acesso não autorizado.'], 403);
         }
 
-        $name = $user->getAttribute('name');
-        $email = $user->getAttribute('email');
+        // Compatibilidade transitória enquanto memberships/central ainda existem nesta etapa.
+        // A Task 3 remove este lookup junto com a autorização central.
+        $centralUser = User::query()->find($userId);
+        $email = $principal->getAttribute('email');
         $actorEmail = is_string($email) ? $email : '';
-        $actorName = is_string($name) && trim($name) !== '' ? trim($name) : $actorEmail;
+        $centralName = $centralUser?->getAttribute('name');
+        $actorName = is_string($centralName) && trim($centralName) !== ''
+            ? trim($centralName)
+            : $actorEmail;
         $reason = $payload['motivo'] ?? null;
 
         try {
