@@ -1,90 +1,13 @@
 <?php
 
-use App\Platform\Models\Tenant;
-use App\Platform\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
-
-uses(RefreshDatabase::class);
-
 beforeEach(function () {
-    $this->caixaDatabase = 'sislac_t_caixa_'.Str::lower(Str::random(9));
-    caixaOpControlConnection()->exec('CREATE DATABASE "'.$this->caixaDatabase.'"');
-
-    $tenantId = (string) Str::uuid();
-    $now = now();
-
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
-        'name' => 'Laboratório Caixa Operacional',
-        'code' => 'caixa-'.Str::lower(Str::random(8)),
-        'status' => 'active',
-        'database_name' => $this->caixaDatabase,
-        'created_at' => $now,
-        'updated_at' => $now,
+    resetSupabaseFixture();
+    $this->caixaUserId = configureSupabaseTestUser($this, [
+        'visualizar_financeiro',
+        'gestao_financeira',
+        'registrar_pagamento',
     ]);
-
-    $this->caixaTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->caixaTenant);
-
-    Artisan::call('migrate', [
-        '--path' => database_path('migrations/tenant'),
-        '--realpath' => true,
-        '--force' => true,
-    ]);
-
-    tenancy()->end();
-
-    $this->caixaUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
-        'user_id' => $this->caixaUser->getKey(),
-        'tenant_id' => $tenantId,
-        'role' => 'financeiro',
-        'status' => 'active',
-        'permissions_extra' => '[]',
-        'permissions_revoked' => '[]',
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->caixaUser->id,
-            'email' => $this->caixaUser->email,
-        ], 200),
-    ]);
-
-    $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-caixa-token');
 });
-
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    caixaOpControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->caixaDatabase.'" WITH (FORCE)');
-});
-
-function caixaOpControlConnection(?string $database = null): PDO
-{
-    $config = config('database.connections.central');
-    $database ??= 'postgres';
-
-    return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
-}
 
 function caixaOpCreateAtendimento(PDO $pdo, string $unidadeId, string $valor = '500.00'): int
 {
@@ -115,7 +38,7 @@ it('abre e consulta a sessão da unidade com valores definidos pelo servidor', f
         ->assertJsonPath('data.unidade_id', 'und-001')
         ->assertJsonPath('data.valor_abertura', '150.00')
         ->assertJsonPath('data.status', 'aberta')
-        ->assertJsonPath('data.responsavel_id', (string) $this->caixaUser->getKey());
+        ->assertJsonPath('data.responsavel_id', $this->caixaUserId);
 
     $id = (int) $response->json('data.id');
 
@@ -141,8 +64,7 @@ it('mantém uma única sessão aberta por unidade mas permite unidades diferente
         'valor_abertura' => '50.00',
     ])->assertCreated();
 
-    $pdo = caixaOpControlConnection($this->caixaDatabase);
-    expect((int) $pdo->query("SELECT count(*) FROM caixa_sessoes WHERE status = 'aberta'")?->fetchColumn())
+    expect((int) supabaseTestPdo()->query("SELECT count(*) FROM caixa_sessoes WHERE status = 'aberta'")?->fetchColumn())
         ->toBe(2);
 });
 
@@ -155,10 +77,7 @@ it('recusa saldo inicial negativo', function () {
 });
 
 it('exige gestão financeira para abrir caixa', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->caixaUser->getKey())
-        ->where('tenant_id', $this->caixaTenant->getKey())
-        ->update(['role' => 'recepcionista']);
+    setSupabaseTestPermissions($this->caixaUserId, ['visualizar_financeiro']);
 
     $this->postJson('/api/financeiro/caixa/abrir', [
         'unidade_id' => 'und-001',
@@ -173,16 +92,12 @@ it('exige gestão financeira para fechar caixa sem alterar a sessão', function 
     ])->assertCreated();
     $sessionId = (int) $session->json('data.id');
 
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->caixaUser->getKey())
-        ->where('tenant_id', $this->caixaTenant->getKey())
-        ->update(['role' => 'recepcionista']);
+    setSupabaseTestPermissions($this->caixaUserId, ['visualizar_financeiro']);
 
     $this->postJson('/api/financeiro/caixa/'.$sessionId.'/fechar')
         ->assertForbidden();
 
-    $pdo = caixaOpControlConnection($this->caixaDatabase);
-    $persisted = $pdo->query("SELECT status, fechada_em FROM caixa_sessoes WHERE id = {$sessionId}")?->fetch(PDO::FETCH_ASSOC);
+    $persisted = supabaseTestPdo()->query("SELECT status, fechada_em FROM caixa_sessoes WHERE id = {$sessionId}")?->fetch(PDO::FETCH_ASSOC);
 
     expect($persisted)->toMatchArray([
         'status' => 'aberta',
@@ -197,7 +112,7 @@ it('vincula automaticamente somente dinheiro e pix ao caixa aberto da unidade', 
     ])->assertCreated();
     $sessionId = (int) $session->json('data.id');
 
-    $pdo = caixaOpControlConnection($this->caixaDatabase);
+    $pdo = supabaseTestPdo();
     $atendimentoId = caixaOpCreateAtendimento($pdo, 'und-001');
 
     foreach ([['Dinheiro', '50.00'], ['PIX', '60.00'], ['Crédito', '70.00']] as [$tipo, $valor]) {
@@ -220,7 +135,7 @@ it('vincula automaticamente somente dinheiro e pix ao caixa aberto da unidade', 
 });
 
 it('mantém pagamento em dinheiro sem vínculo quando não existe caixa aberto', function () {
-    $pdo = caixaOpControlConnection($this->caixaDatabase);
+    $pdo = supabaseTestPdo();
     $atendimentoId = caixaOpCreateAtendimento($pdo, 'und-001');
 
     $payment = $this->postJson('/api/financeiro/atendimentos/'.$atendimentoId.'/pagamentos', [
@@ -242,7 +157,7 @@ it('fecha caixa com saldo calculado no servidor e ignora pagamento estornado', f
     ])->assertCreated();
     $sessionId = (int) $session->json('data.id');
 
-    $pdo = caixaOpControlConnection($this->caixaDatabase);
+    $pdo = supabaseTestPdo();
     $atendimentoId = caixaOpCreateAtendimento($pdo, 'und-001');
 
     $money = $this->postJson('/api/financeiro/atendimentos/'.$atendimentoId.'/pagamentos', [
@@ -268,7 +183,7 @@ it('fecha caixa com saldo calculado no servidor e ignora pagamento estornado', f
     $saida->execute();
     expect((int) $saida->fetchColumn())->toBe($sessionId);
 
-    $response = $this->postJson('/api/financeiro/caixa/'.$sessionId.'/fechar', [
+    $this->postJson('/api/financeiro/caixa/'.$sessionId.'/fechar', [
         'observacoes' => 'Fechamento conferido',
     ])->assertOk()
         ->assertJsonPath('data.sessao_id', $sessionId)
@@ -299,7 +214,7 @@ it('ignora saída estornada no saldo de fechamento', function () {
         'valor_abertura' => '100.00',
     ])->assertCreated();
     $sessionId = (int) $session->json('data.id');
-    $pdo = caixaOpControlConnection($this->caixaDatabase);
+    $pdo = supabaseTestPdo();
 
     $saida = $pdo->query(<<<'SQL'
         INSERT INTO financeiro_saidas
@@ -315,7 +230,7 @@ it('ignora saída estornada no saldo de fechamento', function () {
         INSERT INTO financeiro_estornos (origem_tipo, origem_id, motivo, valor, criado_por)
         VALUES ('saida', ?, 'Saída cancelada antes do fechamento', 25.00, ?)
     SQL);
-    $estorno->execute([(int) ($saida['id'] ?? 0), (string) $this->caixaUser->getKey()]);
+    $estorno->execute([(int) ($saida['id'] ?? 0), $this->caixaUserId]);
 
     $this->postJson('/api/financeiro/caixa/'.$sessionId.'/fechar')
         ->assertOk()
