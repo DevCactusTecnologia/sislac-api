@@ -1,90 +1,15 @@
 <?php
 
-use App\Platform\Models\Tenant;
-use App\Platform\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
-
-uses(RefreshDatabase::class);
-
 beforeEach(function () {
-    $this->financeiroCoreDatabase = 'sislac_t_fin_core_'.Str::lower(Str::random(9));
-    financeiroCoreControlConnection()->exec('CREATE DATABASE "'.$this->financeiroCoreDatabase.'"');
-
-    $tenantId = (string) Str::uuid();
-    $now = now();
-
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
-        'name' => 'Laboratório Financeiro Core',
-        'code' => 'fin-core-'.Str::lower(Str::random(8)),
-        'status' => 'active',
-        'database_name' => $this->financeiroCoreDatabase,
-        'created_at' => $now,
-        'updated_at' => $now,
+    resetSupabaseFixture();
+    $this->financeiroCoreUserId = configureSupabaseTestUser($this, [
+        'visualizar_financeiro',
+        'visualizar_atendimentos',
+        'gestao_financeira',
+        'registrar_pagamento',
+        'editar_atendimento',
     ]);
-
-    $this->financeiroCoreTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->financeiroCoreTenant);
-
-    Artisan::call('migrate', [
-        '--path' => database_path('migrations/tenant'),
-        '--realpath' => true,
-        '--force' => true,
-    ]);
-
-    tenancy()->end();
-
-    $this->financeiroCoreUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
-        'user_id' => $this->financeiroCoreUser->getKey(),
-        'tenant_id' => $tenantId,
-        'role' => 'financeiro',
-        'status' => 'active',
-        'permissions_extra' => '[]',
-        'permissions_revoked' => '[]',
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->financeiroCoreUser->id,
-            'email' => $this->financeiroCoreUser->email,
-        ], 200),
-    ]);
-
-    $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-financeiro-token');
 });
-
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    financeiroCoreControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->financeiroCoreDatabase.'" WITH (FORCE)');
-});
-
-function financeiroCoreControlConnection(?string $database = null): PDO
-{
-    $config = config('database.connections.central');
-    $database ??= 'postgres';
-
-    return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
-}
 
 /**
  * @param  list<array{nome:string,valor:string,status?:string,destino?:string}>  $exames
@@ -100,7 +25,7 @@ function financeiroCoreCreateAtendimento(PDO $pdo, array $exames): array
     $statement->execute();
     $atendimento = $statement->fetch(PDO::FETCH_ASSOC);
 
-    if (is_array($atendimento) === false) {
+    if (! is_array($atendimento)) {
         throw new RuntimeException('Falha ao criar atendimento de teste.');
     }
 
@@ -140,7 +65,7 @@ function financeiroCoreInsertPayment(PDO $pdo, int $atendimentoId, string $valor
 }
 
 it('lista A Receber de pacientes com saldo calculado somente no backend', function () {
-    $pdo = financeiroCoreControlConnection($this->financeiroCoreDatabase);
+    $pdo = supabaseTestPdo();
     $atendimento = financeiroCoreCreateAtendimento($pdo, [
         ['nome' => 'Hemograma', 'valor' => '100.00'],
         ['nome' => 'Exame cancelado', 'valor' => '50.00', 'status' => 'cancelado'],
@@ -161,7 +86,7 @@ it('lista A Receber de pacientes com saldo calculado somente no backend', functi
 });
 
 it('registra recebimentos de forma aditiva e recompõe o status do atendimento', function () {
-    $pdo = financeiroCoreControlConnection($this->financeiroCoreDatabase);
+    $pdo = supabaseTestPdo();
     $atendimento = financeiroCoreCreateAtendimento($pdo, [
         ['nome' => 'Hemograma', 'valor' => '100.00'],
     ]);
@@ -188,7 +113,7 @@ it('registra recebimentos de forma aditiva e recompõe o status do atendimento',
 });
 
 it('rejeita valor inválido e sobrepagamento sem escrever parcialmente', function () {
-    $pdo = financeiroCoreControlConnection($this->financeiroCoreDatabase);
+    $pdo = supabaseTestPdo();
     $atendimento = financeiroCoreCreateAtendimento($pdo, [
         ['nome' => 'Hemograma', 'valor' => '100.00'],
     ]);
@@ -207,7 +132,7 @@ it('rejeita valor inválido e sobrepagamento sem escrever parcialmente', functio
 });
 
 it('não registra recebimento para atendimento cancelado', function () {
-    $pdo = financeiroCoreControlConnection($this->financeiroCoreDatabase);
+    $pdo = supabaseTestPdo();
     $atendimento = financeiroCoreCreateAtendimento($pdo, [
         ['nome' => 'Hemograma', 'valor' => '100.00'],
     ]);
@@ -222,7 +147,7 @@ it('não registra recebimento para atendimento cancelado', function () {
 });
 
 it('lista Recebimentos somente com pagamentos efetivos de atendimentos ativos', function () {
-    $pdo = financeiroCoreControlConnection($this->financeiroCoreDatabase);
+    $pdo = supabaseTestPdo();
     $ativo = financeiroCoreCreateAtendimento($pdo, [
         ['nome' => 'Hemograma', 'valor' => '100.00'],
     ]);
@@ -245,7 +170,7 @@ it('lista Recebimentos somente com pagamentos efetivos de atendimentos ativos', 
 });
 
 it('estorna pagamento formalmente preservando o original e reabrindo o saldo', function () {
-    $pdo = financeiroCoreControlConnection($this->financeiroCoreDatabase);
+    $pdo = supabaseTestPdo();
     $atendimento = financeiroCoreCreateAtendimento($pdo, [
         ['nome' => 'Hemograma', 'valor' => '100.00'],
     ]);
@@ -271,7 +196,7 @@ it('estorna pagamento formalmente preservando o original e reabrindo o saldo', f
 });
 
 it('exige motivo e impede segundo estorno do mesmo pagamento', function () {
-    $pdo = financeiroCoreControlConnection($this->financeiroCoreDatabase);
+    $pdo = supabaseTestPdo();
     $atendimento = financeiroCoreCreateAtendimento($pdo, [
         ['nome' => 'Hemograma', 'valor' => '100.00'],
     ]);
@@ -292,13 +217,10 @@ it('exige motivo e impede segundo estorno do mesmo pagamento', function () {
     expect((int) $pdo->query("SELECT count(*) FROM financeiro_estornos WHERE origem_tipo = 'pagamento' AND origem_id = {$pagamentoId}")?->fetchColumn())->toBe(1);
 });
 
-it('não concede estorno à recepção apenas por possuir registrar_pagamento', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->financeiroCoreUser->getKey())
-        ->where('tenant_id', $this->financeiroCoreTenant->getKey())
-        ->update(['role' => 'recepcionista']);
+it('não concede estorno apenas por possuir registrar_pagamento', function () {
+    setSupabaseTestPermissions($this->financeiroCoreUserId, ['registrar_pagamento']);
 
-    $pdo = financeiroCoreControlConnection($this->financeiroCoreDatabase);
+    $pdo = supabaseTestPdo();
     $atendimento = financeiroCoreCreateAtendimento($pdo, [
         ['nome' => 'Hemograma', 'valor' => '100.00'],
     ]);
@@ -312,7 +234,7 @@ it('não concede estorno à recepção apenas por possuir registrar_pagamento', 
 });
 
 it('proíbe substituição destrutiva de pagamentos pelo PATCH de atendimento', function () {
-    $pdo = financeiroCoreControlConnection($this->financeiroCoreDatabase);
+    $pdo = supabaseTestPdo();
     $atendimento = financeiroCoreCreateAtendimento($pdo, [
         ['nome' => 'Hemograma', 'valor' => '100.00'],
     ]);
