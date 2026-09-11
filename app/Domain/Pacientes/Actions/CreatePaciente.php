@@ -17,7 +17,7 @@ final class CreatePaciente
             return DB::transaction(function () use ($attributes, $friendlyId): Paciente {
                 $paciente = new Paciente;
                 $paciente->fill($attributes);
-                $paciente->friendly_id = $friendlyId->next();
+                $paciente->setAttribute('friendly_id', $friendlyId->next());
                 $paciente->save();
 
                 return $paciente->refresh();
