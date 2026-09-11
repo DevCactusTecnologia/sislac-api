@@ -1,82 +1,99 @@
-# Baseline de segurança — SISLAC API
+# Segurança — SISLAC API
 
-Estes controles valem para todo o backend e devem ser verificáveis por teste, guard ou prova operacional.
+## Princípios
 
-## Rede
+1. identidade clínica vem do Supabase Auth;
+2. autorização vem da fonte canônica no PostgreSQL;
+3. RLS permanece ativa e relevante;
+4. o backend usa menor privilégio;
+5. nenhuma credencial administrativa vai para o navegador;
+6. operações críticas são transacionais e auditáveis;
+7. erro HTTP ou exceção não deve confirmar escrita parcial.
 
-- Somente 22, 80 e 443 ficam expostas na VPS.
-- PostgreSQL, pgAdmin e Nginx interno não são publicados para a internet.
-- TLS 1.2+ e HSTS na borda pública.
-- Segredos vivem no ambiente, nunca no repositório.
+## Autenticação
 
-## Autenticação clínica durante a transição
+Rotas protegidas exigem `Authorization: Bearer <access_token>`. O middleware `supabase.auth` valida o token server-side no Supabase Auth e cria o principal autenticado da requisição.
 
-- O frontend clínico continua autenticando no **Supabase Auth** enquanto o cutover de identidade não for uma fase explícita.
-- A API Laravel recebe Bearer token e valida a identidade server-side no Supabase Auth (`/auth/v1/user`) usando apenas URL pública e publishable key do projeto.
-- A API clínica não usa pipeline stateful do Sanctum; a rota `/sanctum/csrf-cookie` fica explicitamente desativada enquanto não houver consumidor aprovado.
-- Token ausente ou rejeitado falha com 401; indisponibilidade do Auth falha fechada com 503.
-- Tokens e respostas internas do upstream não aparecem em payloads ou logs de erro.
-- Um UUID validado no Supabase deve existir previamente em `central.users`; a requisição não cria usuário, membership ou permissão automaticamente.
-- Autorização clínica continua sendo Laravel server-side por memberships/permissões. `X-Tenant` apenas seleciona um vínculo já autorizado.
-- `user_metadata` editável pelo usuário nunca é fonte de autorização.
+A publishable key identifica o projeto e pode acompanhar a chamada de validação, mas não concede os privilégios do usuário e não substitui o Bearer token.
 
-## Super Admin
+Não use chave administrativa, senha PostgreSQL ou credencial privilegiada no frontend.
 
-O Super Admin é um contexto separado, autenticado pela sessão web Laravel e restrito ao plano central. Essa sessão não transforma o login Laravel em segunda fonte de autenticação clínica.
+## Banco e RLS
 
-## Banco
+A API conecta ao PostgreSQL do Supabase com uma role dedicada ao backend. Essa role deve ser:
 
-- O papel HTTP (`sislac_app`) não possui `SUPERUSER`, `CREATEDB` ou `CREATEROLE`.
-- Criar bancos é responsabilidade exclusiva do provisionamento auditado.
-- `supabase_source` nunca é default e deve usar credencial dedicada de leitura.
-- No projeto atual, `supabase_read_only_user` foi verificado com `default_transaction_read_only=on`, SELECT em `public.pacientes`, sem INSERT/UPDATE/DELETE e sem CREATE DATABASE.
-- O código reforça essa proteção com `SET default_transaction_read_only = on`; a conformidade live falha se a sessão não estiver read-only.
-- Auditorias clínicas/financeiras devem ser append-only quando os respectivos módulos forem migrados.
-- Produção utiliza PostgreSQL; MySQL, MariaDB e SQL Server não fazem parte deste backend.
+- `LOGIN` somente quando necessário à conexão;
+- `NOSUPERUSER`;
+- `NOCREATEDB`;
+- `NOCREATEROLE`;
+- `NOBYPASSRLS`;
+- restrita aos schemas/objetos realmente utilizados.
 
-## Dados sensíveis
+Durante a requisição autenticada, `supabase.db` abre transação e aplica o papel `authenticated` e as claims do usuário para que `auth.uid()`/policies/funções operem no contexto correto.
 
-- Dados clínicos e identificadores pessoais só aparecem em logs quando estritamente necessários e sanitizados.
-- Credenciais de integração nunca retornam em API.
-- Testes usam dados sintéticos/anonimizados.
-- Nenhum `service_role`, secret key ou senha do Supabase é versionado.
+O middleware confirma a transação apenas em resposta de sucesso. Respostas de erro e exceções executam rollback.
 
-## Isolamento database-per-lab
+## Permissões
 
-Casos obrigatórios de regressão:
+A API usa `public.has_permission(user_id, permission)` como autoridade. `permission:<nome>` deve receber nomes fixos definidos pela aplicação; o cliente não escolhe uma permissão para obter acesso.
 
-- usuário de A não lê nem grava B;
-- `X-Tenant` forjado não inicializa B;
-- membership suspensa perde acesso imediatamente;
-- usuário multi-lab só entra no tenant selecionado e autorizado;
-- exceção não deixa contexto tenant para a requisição seguinte;
-- alternância A → B → A → B não vaza conexão/contexto.
+Permissão não é derivada de `user_metadata` controlável pelo usuário, de headers arbitrários ou de parâmetros de rota.
 
-Fila, filesystem compartilhado ou broadcasting só recebem regras tenant quando esses recursos realmente forem habilitados.
+## Validação e domínio
 
-## Conformidade Supabase
+Requests validam formato e intenção antes do domínio. Regras concorrentes usam transação/lock no PostgreSQL. Invariantes críticas existentes no banco devem permanecer protegidas por constraints, triggers ou funções canônicas quando apropriado.
 
-Há duas garantias diferentes:
+Pagamentos, estornos, caixa e despesas preservam histórico contábil. Exclusão física não deve substituir uma reversão de negócio auditável.
 
-- **integridade offline:** manifesto versionado, hash e invariantes; roda no CI sem credencial de produção;
-- **conformidade live:** consulta explícita read-only ao Supabase real para cada módulo migrado.
+## CORS
 
-O CI não chama o manifesto estático de “conformidade Supabase ↔ Laravel”. Uma onda só é declarada conforme depois do gate live correspondente.
+`CORS_ALLOWED_ORIGINS` deve conter apenas origens explicitamente autorizadas. Em produção, remova origens locais que não tenham uso operacional.
 
-## Infraestrutura mínima
+CORS não é mecanismo de autenticação; apenas limita quais origens de navegador podem chamar a API.
 
-- fila padrão é `sync`;
-- não existem tabelas `jobs`, workers, Redis ou Horizon sem consumidor runtime;
-- `plans`/`subscriptions` não fazem parte da baseline de novos bancos enquanto não houver regra de negócio concreta;
-- instalações existentes são auditadas antes de qualquer cleanup destrutivo.
+## Sessão, cache e filas
 
-## Gates automatizados
+A API clínica é orientada a Bearer token. Cache e sessão locais não carregam autoridade clínica. A fila permanece síncrona enquanto não houver consumidor real, reduzindo superfície operacional desnecessária.
 
-- `composer audit --locked --no-interaction`;
-- verificação de integridade do manifesto Supabase;
-- `vendor/bin/pint --test`;
-- `vendor/bin/phpstan analyse --no-progress --memory-limit=1G`;
-- `vendor/bin/pest --parallel`;
-- guards Platform ↔ Domain, PostgreSQL-only, tamanho de arquivo, `.env` e infraestrutura sem consumidor.
+## Logs
 
-O gate live é deliberadamente separado do CI comum para não inserir credenciais de produção em execução de código de PR.
+Nunca registrar:
+
+- access token completo;
+- senha PostgreSQL;
+- chaves secretas;
+- cookies/sessões;
+- documentos clínicos completos sem necessidade;
+- payloads sensíveis indiscriminadamente.
+
+Registre identificadores técnicos, ação, resultado, duração e correlação suficientes para diagnóstico sem transformar log em cópia do dado clínico.
+
+## Produção
+
+- `APP_DEBUG=false`;
+- TLS obrigatório;
+- `DB_SSLMODE=require`;
+- segredos fora do Git;
+- permissões mínimas no sistema operacional;
+- Nginx/PHP atualizados;
+- acesso SSH preferencialmente por chave;
+- CI verde no SHA implantado.
+
+## Testes
+
+A suíte automatizada usa banco PostgreSQL descartável com fixture próprio. Testes não podem apontar para o Supabase de produção.
+
+O CI valida manifesto/lock do Composer, vulnerabilidades conhecidas, Pint, Larastan, Pest e guards estruturais.
+
+## Incidentes
+
+Em suspeita de vazamento:
+
+1. revogue/rotacione a credencial afetada;
+2. preserve logs e evidências necessárias;
+3. verifique uso indevido e período de exposição;
+4. atualize secrets nos ambientes;
+5. invalide sessões/tokens quando aplicável;
+6. corrija a causa-raiz antes de reabrir acesso.
+
+Nunca publique segredos em issue, commit, PR ou conversa de suporte.
