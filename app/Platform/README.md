@@ -1,14 +1,17 @@
-# app/Platform — plano central
+# app/Platform — integrações externas
 
-Tudo o que vive no banco `sislac_central`: `Tenant`, `User`, `Membership`,
-`Plan`, `Subscription`, `ProvisioningRun`, `PlatformAudit`… (Fase 1).
+Esta camada contém somente adaptadores de infraestrutura externa com consumidor real no backend.
+
+No estado atual, a integração com o Supabase concentra:
+
+- validação server-side da identidade recebida por Bearer token;
+- representação do principal autenticado;
+- autorização pela função canônica `public.has_permission`;
+- suporte ao contexto PostgreSQL/RLS aplicado pela camada HTTP.
 
 Regras:
 
-- Models declaram `protected $connection = 'central';`.
-- Nada aqui referencia `App\Domain\*` nem `DB::connection('tenant')`.
-- A única ponte com o laboratório é o middleware de tenancy
-  (`App\Http\Middleware\EnsureTenantContext`, Fase 1).
-
-O guard `scripts/check-no-central-in-tenant.sh` falha o CI se a fronteira for
-cruzada em qualquer direção.
+- o Supabase permanece a fonte de verdade para PostgreSQL, Auth e Storage;
+- não duplicar usuários, permissões, tenancy, schema ou configuração do Supabase no Laravel;
+- não criar abstrações de infraestrutura sem consumidor real;
+- regras de domínio permanecem em `App\Domain`, enquanto `App\Platform` se limita à integração técnica necessária.
