@@ -1,90 +1,12 @@
 <?php
 
-use App\Platform\Models\Tenant;
-use App\Platform\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
-
-uses(RefreshDatabase::class);
-
 beforeEach(function () {
-    $this->saidasApiDatabase = 'sislac_t_saidas_api_'.Str::lower(Str::random(8));
-    saidasApiControlConnection()->exec('CREATE DATABASE "'.$this->saidasApiDatabase.'"');
-
-    $tenantId = (string) Str::uuid();
-    $now = now();
-
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
-        'name' => 'Laboratório API Saídas',
-        'code' => 'saidas-api-'.Str::lower(Str::random(7)),
-        'status' => 'active',
-        'database_name' => $this->saidasApiDatabase,
-        'created_at' => $now,
-        'updated_at' => $now,
+    resetSupabaseFixture();
+    $this->saidasApiUserId = configureSupabaseTestUser($this, [
+        'visualizar_financeiro',
+        'gestao_financeira',
     ]);
-
-    $this->saidasApiTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->saidasApiTenant);
-
-    Artisan::call('migrate', [
-        '--path' => database_path('migrations/tenant'),
-        '--realpath' => true,
-        '--force' => true,
-    ]);
-
-    tenancy()->end();
-
-    $this->saidasApiUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
-        'user_id' => $this->saidasApiUser->getKey(),
-        'tenant_id' => $tenantId,
-        'role' => 'financeiro',
-        'status' => 'active',
-        'permissions_extra' => '[]',
-        'permissions_revoked' => '[]',
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->saidasApiUser->id,
-            'email' => $this->saidasApiUser->email,
-        ], 200),
-    ]);
-
-    $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-saidas-token');
 });
-
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    saidasApiControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->saidasApiDatabase.'" WITH (FORCE)');
-});
-
-function saidasApiControlConnection(?string $database = null): PDO
-{
-    $config = config('database.connections.central');
-    $database ??= 'postgres';
-
-    return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
-}
 
 /** @param array<string, mixed> $overrides */
 function validSaidaPayload(array $overrides = []): array
@@ -128,9 +50,7 @@ it('cria saída aberta com protocolo e estado definidos pelo servidor', function
         ->assertJsonPath('data.caixa_sessao_id', null);
 
     expect((string) $response->json('data.protocolo'))->toMatch('/^SAI-\d{4}-\d{7}$/');
-
-    $pdo = saidasApiControlConnection($this->saidasApiDatabase);
-    expect((int) $pdo->query('SELECT count(*) FROM financeiro_saidas')?->fetchColumn())->toBe(1);
+    expect((int) supabaseTestPdo()->query('SELECT count(*) FROM financeiro_saidas')?->fetchColumn())->toBe(1);
 });
 
 it('permite criar saída já paga e gera data de pagamento quando ausente', function () {
@@ -198,7 +118,7 @@ it('normaliza campos textuais de negócio na criação', function () {
 });
 
 it('filtra saídas por status busca e intervalo de data', function () {
-    $pdo = saidasApiControlConnection($this->saidasApiDatabase);
+    $pdo = supabaseTestPdo();
     insertSaidaForList($pdo, 'Energia matriz', 'aberta', '2026-09-01 10:00:00+00', 'Energia', 'Energisa');
     insertSaidaForList($pdo, 'Água filial', 'paga', '2026-09-05 10:00:00+00', 'Água', 'Companhia');
     insertSaidaForList($pdo, 'Internet matriz', 'aberta', '2026-08-15 10:00:00+00', 'Internet', 'Operadora');
@@ -211,7 +131,7 @@ it('filtra saídas por status busca e intervalo de data', function () {
 });
 
 it('pagina de modo estável por data e id', function () {
-    $pdo = saidasApiControlConnection($this->saidasApiDatabase);
+    $pdo = supabaseTestPdo();
     insertSaidaForList($pdo, 'Primeira', 'aberta', '2026-09-10 10:00:00+00');
     insertSaidaForList($pdo, 'Segunda', 'aberta', '2026-09-10 10:00:00+00');
     insertSaidaForList($pdo, 'Terceira', 'aberta', '2026-09-09 10:00:00+00');
@@ -232,21 +152,14 @@ it('pagina de modo estável por data e id', function () {
 });
 
 it('separa permissão de leitura da gestão financeira', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->saidasApiUser->getKey())
-        ->where('tenant_id', $this->saidasApiTenant->getKey())
-        ->update([
-            'role' => 'recepcionista',
-            'permissions_extra' => json_encode(['visualizar_financeiro'], JSON_THROW_ON_ERROR),
-        ]);
+    setSupabaseTestPermissions($this->saidasApiUserId, ['visualizar_financeiro']);
 
     $this->getJson('/api/financeiro/saidas')->assertOk();
 
     $this->postJson('/api/financeiro/saidas', validSaidaPayload())
         ->assertForbidden();
 
-    $pdo = saidasApiControlConnection($this->saidasApiDatabase);
-    expect((int) $pdo->query('SELECT count(*) FROM financeiro_saidas')?->fetchColumn())->toBe(0);
+    expect((int) supabaseTestPdo()->query('SELECT count(*) FROM financeiro_saidas')?->fetchColumn())->toBe(0);
 });
 
 it('edita campos de negócio enquanto a saída está aberta', function () {
@@ -294,7 +207,7 @@ it('efetiva pagamento de saída aberta uma única vez', function () {
 });
 
 it('vincula saída paga em dinheiro ou pix ao único caixa aberto', function () {
-    $pdo = saidasApiControlConnection($this->saidasApiDatabase);
+    $pdo = supabaseTestPdo();
     $caixaId = (int) $pdo->query("INSERT INTO caixa_sessoes (unidade_id, valor_abertura) VALUES ('und-001', 0) RETURNING id")?->fetchColumn();
 
     foreach (['Dinheiro', 'PIX'] as $forma) {
@@ -314,7 +227,7 @@ it('vincula saída paga em dinheiro ou pix ao único caixa aberto', function () 
 });
 
 it('não vincula outras formas de pagamento ao caixa', function () {
-    $pdo = saidasApiControlConnection($this->saidasApiDatabase);
+    $pdo = supabaseTestPdo();
     $pdo->exec("INSERT INTO caixa_sessoes (unidade_id, valor_abertura) VALUES ('und-001', 0)");
 
     $saida = $this->postJson('/api/financeiro/saidas', validSaidaPayload())
@@ -364,13 +277,13 @@ it('recusa edição ou reabertura de saída cancelada', function () {
         ->assertCreated();
 
     $id = (int) $saida->json('data.id');
-    $pdo = saidasApiControlConnection($this->saidasApiDatabase);
+    $pdo = supabaseTestPdo();
     $statement = $pdo->prepare(<<<'SQL'
         INSERT INTO financeiro_estornos (origem_tipo, origem_id, motivo, valor, criado_por)
         VALUES ('saida', ?, 'Cancelamento de teste', 120.50, ?)
     SQL);
-    $statement->execute([$id, (string) $this->saidasApiUser->getKey()]);
-    $pdo->exec('UPDATE financeiro_saidas SET status = \'cancelada\' WHERE id = '.$id);
+    $statement->execute([$id, $this->saidasApiUserId]);
+    $pdo->exec("UPDATE financeiro_saidas SET status = 'cancelada' WHERE id = {$id}");
 
     $this->patchJson('/api/financeiro/saidas/'.$id, [
         'descricao' => 'Não pode alterar',
@@ -387,17 +300,9 @@ it('exige gestão financeira para editar saída', function () {
         ->assertCreated();
 
     $id = (int) $saida->json('data.id');
-
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->saidasApiUser->getKey())
-        ->where('tenant_id', $this->saidasApiTenant->getKey())
-        ->update([
-            'role' => 'recepcionista',
-            'permissions_extra' => json_encode(['visualizar_financeiro'], JSON_THROW_ON_ERROR),
-        ]);
+    setSupabaseTestPermissions($this->saidasApiUserId, ['visualizar_financeiro']);
 
     $this->patchJson('/api/financeiro/saidas/'.$id, [
         'descricao' => 'Sem permissão',
     ])->assertForbidden();
-}
-);
+});
