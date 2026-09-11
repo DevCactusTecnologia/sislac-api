@@ -95,7 +95,17 @@ jobs:
         run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
 
       - name: Pest — testes
-        run: vendor/bin/pest --parallel --colors=always
+        run: |
+          set -o pipefail
+          vendor/bin/pest --parallel --colors=never 2>&1 | tee pest-output.txt
+
+      - name: Diagnóstico Pest
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pest-diagnostic
+          path: pest-output.txt
+          retention-days: 1
 
   guards:
     name: Guards de repositório
