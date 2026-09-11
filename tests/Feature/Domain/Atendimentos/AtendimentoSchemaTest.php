@@ -1,64 +1,12 @@
 <?php
 
-use App\Platform\Models\Tenant;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Str;
-
-uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->atendimentosDatabase = 'sislac_t_atendimentos_'.Str::lower(Str::random(10));
-    atendimentoSchemaControlConnection()->exec('CREATE DATABASE "'.$this->atendimentosDatabase.'"');
-
-    $tenantId = (string) Str::uuid();
-    $now = now();
-
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
-        'name' => 'Laboratório Atendimentos',
-        'code' => 'atendimentos-'.Str::lower(Str::random(8)),
-        'status' => 'active',
-        'database_name' => $this->atendimentosDatabase,
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    $this->atendimentosTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->atendimentosTenant);
-
-    Artisan::call('migrate', [
-        '--path' => database_path('migrations/tenant'),
-        '--realpath' => true,
-        '--force' => true,
-    ]);
+    resetSupabaseFixture();
 });
 
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    atendimentoSchemaControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->atendimentosDatabase.'" WITH (FORCE)');
-});
-
-function atendimentoSchemaControlConnection(?string $database = null): PDO
-{
-    $config = config('database.connections.central');
-    $database ??= 'postgres';
-
-    return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
-}
-
-it('cria as tabelas físicas do agregado no banco tenant', function () {
+it('mantém as tabelas físicas necessárias ao backend de atendimentos', function () {
     expect(Schema::hasTable('protocolo_sequence'))->toBeTrue()
         ->and(Schema::hasTable('atendimentos'))->toBeTrue()
         ->and(Schema::hasTable('atendimento_exames'))->toBeTrue()
@@ -66,7 +14,7 @@ it('cria as tabelas físicas do agregado no banco tenant', function () {
         ->and(Schema::hasTable('atendimento_audit'))->toBeTrue();
 });
 
-it('cria o contrato físico principal de atendimentos sem tenant_id', function () {
+it('mantém o contrato físico principal de atendimentos sem tenant_id', function () {
     expect(Schema::hasColumns('atendimentos', [
         'id', 'protocolo', 'data', 'paciente_id', 'paciente_nome', 'paciente_cpf',
         'paciente_nascimento', 'solicitante', 'convenio_id', 'convenio_nome', 'unidade_id',
@@ -98,9 +46,8 @@ it('preserva as colunas estruturais atuais de exames e pagamentos', function () 
         ]))->toBeTrue();
 });
 
-it('usa tipos postgres para uuid e jsonb onde o contrato exige', function () {
-    $pdo = atendimentoSchemaControlConnection($this->atendimentosDatabase);
-    $statement = $pdo->query(<<<'SQL'
+it('usa tipos postgres para uuid e jsonb onde o runtime depende deles', function () {
+    $statement = supabaseTestPdo()->query(<<<'SQL'
         SELECT table_name, column_name, udt_name
         FROM information_schema.columns
         WHERE table_schema = 'public'

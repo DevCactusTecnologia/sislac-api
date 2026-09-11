@@ -1,62 +1,12 @@
 <?php
 
-use App\Platform\Models\Tenant;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-uses(RefreshDatabase::class);
-
 beforeEach(function () {
-    $this->atendimentoInvariantDatabase = 'sislac_t_atinv_'.Str::lower(Str::random(10));
-    atendimentoInvariantControlConnection()->exec('CREATE DATABASE "'.$this->atendimentoInvariantDatabase.'"');
-
-    $tenantId = (string) Str::uuid();
-    $now = now();
-
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
-        'name' => 'Laboratório Invariantes',
-        'code' => 'atinv-'.Str::lower(Str::random(8)),
-        'status' => 'active',
-        'database_name' => $this->atendimentoInvariantDatabase,
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    $tenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($tenant);
-
-    Artisan::call('migrate', [
-        '--path' => database_path('migrations/tenant'),
-        '--realpath' => true,
-        '--force' => true,
-    ]);
+    resetSupabaseFixture();
 });
-
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    atendimentoInvariantControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->atendimentoInvariantDatabase.'" WITH (FORCE)');
-});
-
-function atendimentoInvariantControlConnection(?string $database = null): PDO
-{
-    $config = config('database.connections.central');
-    $database ??= 'postgres';
-
-    return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
-}
 
 function createInvariantAtendimento(array $overrides = []): int
 {

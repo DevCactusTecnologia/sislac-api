@@ -1,92 +1,17 @@
 <?php
 
 use App\Domain\Atendimentos\Actions\UpdateAtendimento;
-use App\Platform\Models\Tenant;
-use App\Platform\Models\User;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
-uses(RefreshDatabase::class);
-
 beforeEach(function () {
-    $this->atendimentoUpdateDatabase = 'sislac_t_atupdate_'.Str::lower(Str::random(9));
-    atendimentoUpdateControlConnection()->exec('CREATE DATABASE "'.$this->atendimentoUpdateDatabase.'"');
-
-    $tenantId = (string) Str::uuid();
-    $now = now();
-
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
-        'name' => 'Laboratório Edição Atendimentos',
-        'code' => 'atupdate-'.Str::lower(Str::random(8)),
-        'status' => 'active',
-        'database_name' => $this->atendimentoUpdateDatabase,
-        'created_at' => $now,
-        'updated_at' => $now,
+    resetSupabaseFixture();
+    configureSupabaseTestUser($this, [
+        'criar_atendimento',
+        'editar_atendimento',
+        'cancelar_atendimento',
     ]);
-
-    $this->atendimentoUpdateTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->atendimentoUpdateTenant);
-
-    Artisan::call('migrate', [
-        '--path' => database_path('migrations/tenant'),
-        '--realpath' => true,
-        '--force' => true,
-    ]);
-
-    tenancy()->end();
-
-    $this->atendimentoUpdateUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
-        'user_id' => $this->atendimentoUpdateUser->getKey(),
-        'tenant_id' => $tenantId,
-        'role' => 'recepcionista',
-        'status' => 'active',
-        'permissions_extra' => '[]',
-        'permissions_revoked' => '[]',
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->atendimentoUpdateUser->id,
-            'email' => $this->atendimentoUpdateUser->email,
-        ], 200),
-    ]);
-
-    $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-atendimentos-token');
 });
-
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    atendimentoUpdateControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->atendimentoUpdateDatabase.'" WITH (FORCE)');
-});
-
-function atendimentoUpdateControlConnection(?string $database = null): PDO
-{
-    $config = config('database.connections.central');
-    $database ??= 'postgres';
-
-    return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
-}
 
 /** @return array<string, mixed> */
 function atendimentoUpdateCreatePayload(array $exames = []): array
@@ -131,8 +56,9 @@ it('edita escalares e ignora protocolo e status derivados enviados pelo cliente'
         ->assertJsonPath('data.solicitante', 'Solicitante Atualizado')
         ->assertJsonPath('data.protocolo', $protocol);
 
-    $pdo = atendimentoUpdateControlConnection($this->atendimentoUpdateDatabase);
-    $row = $pdo->query("SELECT protocolo, status_atendimento, status_pagamento, subtotal::text, total::text FROM atendimentos WHERE id = {$id}")?->fetch(PDO::FETCH_ASSOC);
+    $row = supabaseTestPdo()->query(
+        "SELECT protocolo, status_atendimento, status_pagamento, subtotal::text, total::text FROM atendimentos WHERE id = {$id}",
+    )?->fetch(PDO::FETCH_ASSOC);
 
     expect($row)->toMatchArray([
         'protocolo' => $protocol,
@@ -153,7 +79,7 @@ it('preserva estado clínico ordem e valor original da mesma ocorrência de exam
         'amostra_seq' => 1,
     ]]))->assertCreated();
     $id = (int) $created->json('atendimento_id');
-    $pdo = atendimentoUpdateControlConnection($this->atendimentoUpdateDatabase);
+    $pdo = supabaseTestPdo();
 
     atendimentoUpdateAdvanceExamesToFinalizado($pdo, $id);
     $pdo->exec("UPDATE atendimento_exames SET ordem = 7, resultados = '{\"hb\":\"13.5\"}'::jsonb WHERE atendimento_id = {$id}");
@@ -192,7 +118,7 @@ it('nova amostra da mesma identidade não herda estado clínico da ocorrência a
         'amostra_seq' => 1,
     ]]))->assertCreated();
     $id = (int) $created->json('atendimento_id');
-    $pdo = atendimentoUpdateControlConnection($this->atendimentoUpdateDatabase);
+    $pdo = supabaseTestPdo();
 
     atendimentoUpdateAdvanceExamesToFinalizado($pdo, $id);
     $pdo->exec("UPDATE atendimento_exames SET ordem = 7 WHERE atendimento_id = {$id}");
@@ -230,8 +156,6 @@ it('substitui lista de exames atomicamente e faz rollback integral se novo filho
     ]))->assertCreated();
     $id = (int) $created->json('atendimento_id');
 
-    tenancy()->initialize($this->atendimentoUpdateTenant);
-
     expect(fn () => app(UpdateAtendimento::class)->handle($id, [
         'solicitante' => 'Não Deve Persistir',
         'exames' => [
@@ -240,9 +164,7 @@ it('substitui lista de exames atomicamente e faz rollback integral se novo filho
         ],
     ], null))->toThrow(QueryException::class);
 
-    tenancy()->end();
-
-    $pdo = atendimentoUpdateControlConnection($this->atendimentoUpdateDatabase);
+    $pdo = supabaseTestPdo();
     expect((string) $pdo->query("SELECT solicitante FROM atendimentos WHERE id = {$id}")?->fetchColumn())->toBe('Solicitante Original')
         ->and((int) $pdo->query("SELECT count(*) FROM atendimento_exames WHERE atendimento_id = {$id}")?->fetchColumn())->toBe(2)
         ->and((string) $pdo->query("SELECT valor::text FROM atendimento_exames WHERE atendimento_id = {$id} AND nome_exame = 'Hemograma'")?->fetchColumn())->toBe('100.00');
@@ -263,7 +185,7 @@ it('cancela sem exclusão física marcando todos os exames e registrando justifi
         ->assertJsonPath('data.status_atendimento', 'Cancelado')
         ->assertJsonPath('data.motivo_cancelamento', 'Atendimento duplicado');
 
-    $pdo = atendimentoUpdateControlConnection($this->atendimentoUpdateDatabase);
+    $pdo = supabaseTestPdo();
     expect((int) $pdo->query("SELECT count(*) FROM atendimentos WHERE id = {$id}")?->fetchColumn())->toBe(1)
         ->and((int) $pdo->query("SELECT count(*) FROM atendimento_exames WHERE atendimento_id = {$id} AND status = 'cancelado'")?->fetchColumn())->toBe(2)
         ->and((string) $pdo->query("SELECT justificativa FROM atendimento_audit WHERE atendimento_id = {$id} AND justificativa <> '' ORDER BY id DESC LIMIT 1")?->fetchColumn())->toBe('Cancelamento confirmado na recepção');
