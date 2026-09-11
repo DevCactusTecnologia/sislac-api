@@ -30,6 +30,8 @@ done
 if rg -n \
   --glob '!docs/superpowers/**' \
   --glob '!scripts/check-backend-scope.sh' \
+  --glob '!tests/Feature/Architecture/BackendScopeTest.php' \
+  --glob '!tests/Feature/Production/ProductionHardeningTest.php' \
   -e 'stancl/tenancy' \
   -e 'TenantProvisioner' \
   -e 'PostgresDatabaseAdmin' \
