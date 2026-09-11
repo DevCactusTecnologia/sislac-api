@@ -7,6 +7,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 final readonly class UseSupabaseDatabaseContext
 {
@@ -26,13 +27,30 @@ final readonly class UseSupabaseDatabaseContext
             'email' => is_string($email) && $email !== '' ? $email : null,
         ], static fn (mixed $value): bool => $value !== null), JSON_THROW_ON_ERROR);
 
-        return DB::connection()->transaction(function () use ($request, $next, $userId, $claims): Response {
-            DB::selectOne("select set_config('request.jwt.claim.sub', ?, true)", [$userId]);
-            DB::selectOne("select set_config('request.jwt.claim.role', 'authenticated', true)");
-            DB::selectOne("select set_config('request.jwt.claims', ?, true)", [$claims]);
-            DB::statement('set local role authenticated');
+        $connection = DB::connection();
+        $connection->beginTransaction();
 
-            return $next($request);
-        });
+        try {
+            $connection->selectOne("select set_config('request.jwt.claim.sub', ?, true)", [$userId]);
+            $connection->selectOne("select set_config('request.jwt.claim.role', 'authenticated', true)");
+            $connection->selectOne("select set_config('request.jwt.claims', ?, true)", [$claims]);
+            $connection->statement('set local role authenticated');
+
+            $response = $next($request);
+
+            if ($response->getStatusCode() >= 400) {
+                $connection->rollBack();
+            } else {
+                $connection->commit();
+            }
+
+            return $response;
+        } catch (Throwable $exception) {
+            if ($connection->transactionLevel() > 0) {
+                $connection->rollBack();
+            }
+
+            throw $exception;
+        }
     }
 }
