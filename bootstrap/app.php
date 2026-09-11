@@ -4,6 +4,7 @@ use App\Http\Middleware\AuthenticateSupabaseUser;
 use App\Http\Middleware\EnsureTenantContext;
 use App\Http\Middleware\RequireSuperAdmin;
 use App\Http\Middleware\RequireTenantPermission;
+use App\Http\Middleware\UseSupabaseDatabaseContext;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -25,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         $middleware->alias([
             'supabase.auth' => AuthenticateSupabaseUser::class,
+            'supabase.db' => UseSupabaseDatabaseContext::class,
             'super_admin' => RequireSuperAdmin::class,
             'tenant' => EnsureTenantContext::class,
             'tenant.permission' => RequireTenantPermission::class,

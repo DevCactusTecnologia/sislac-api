@@ -2,8 +2,8 @@
 
 namespace App\Http\Middleware;
 
-use App\Platform\Models\User;
 use App\Platform\Supabase\SupabaseAuth;
+use App\Platform\Supabase\SupabasePrincipal;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -33,15 +33,8 @@ final readonly class AuthenticateSupabaseUser
             return response()->json(['message' => 'Não autenticado.'], 401);
         }
 
-        $user = User::query()->find($identity->id);
-
-        if ($user === null) {
-            return response()->json([
-                'message' => 'Usuário ainda não provisionado no Laravel.',
-            ], 403);
-        }
-
-        $request->setUserResolver(static fn (): User => $user);
+        $principal = new SupabasePrincipal($identity->id, $identity->email);
+        $request->setUserResolver(static fn (): SupabasePrincipal => $principal);
 
         return $next($request);
     }
