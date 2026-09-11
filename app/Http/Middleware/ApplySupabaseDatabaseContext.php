@@ -2,25 +2,25 @@
 
 namespace App\Http\Middleware;
 
-use App\Platform\Supabase\SupabasePrincipal;
+use App\Platform\Supabase\SupabaseAuthUser;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
-final readonly class UseSupabaseDatabaseContext
+final readonly class ApplySupabaseDatabaseContext
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $user = $request->attributes->get(AuthenticateSupabaseUser::REQUEST_ATTRIBUTE);
+        $principal = $request->attributes->get(AuthenticateSupabaseUser::REQUEST_ATTRIBUTE);
 
-        if (! $user instanceof SupabasePrincipal) {
+        if (! $principal instanceof SupabaseAuthUser) {
             return response()->json(['message' => 'Não autenticado.'], 401);
         }
 
-        $userId = $user->getKey();
-        $email = $user->getAttribute('email');
+        $userId = $principal->getKey();
+        $email = $principal->getAttribute('email');
         $claims = json_encode(array_filter([
             'sub' => $userId,
             'role' => 'authenticated',
@@ -31,10 +31,10 @@ final readonly class UseSupabaseDatabaseContext
         $connection->beginTransaction();
 
         try {
+            $connection->statement('SET LOCAL ROLE authenticated');
             $connection->selectOne("select set_config('request.jwt.claim.sub', ?, true)", [$userId]);
             $connection->selectOne("select set_config('request.jwt.claim.role', 'authenticated', true)");
             $connection->selectOne("select set_config('request.jwt.claims', ?, true)", [$claims]);
-            $connection->statement('set local role authenticated');
 
             $response = $next($request);
 

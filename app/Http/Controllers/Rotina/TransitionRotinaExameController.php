@@ -9,7 +9,7 @@ use App\Http\Requests\Rotina\TransitionRotinaExameRequest;
 use App\Platform\Authorization\MembershipAuthorizer;
 use App\Platform\Authorization\TenantPermission;
 use App\Platform\Models\User;
-use App\Platform\Supabase\SupabasePrincipal;
+use App\Platform\Supabase\SupabaseAuthUser;
 use DomainException;
 use Illuminate\Http\JsonResponse;
 use LogicException;
@@ -27,7 +27,7 @@ final class TransitionRotinaExameController extends Controller
         $principal = $request->attributes->get(AuthenticateSupabaseUser::REQUEST_ATTRIBUTE);
         $tenantId = $request->attributes->get('tenant_id');
 
-        if (! is_string($action) || ! $principal instanceof SupabasePrincipal || ! is_string($tenantId)) {
+        if (! is_string($action) || ! $principal instanceof SupabaseAuthUser || ! is_string($tenantId)) {
             return response()->json(['message' => 'Acesso não autorizado.'], 403);
         }
 

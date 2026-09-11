@@ -1,96 +1,84 @@
 <?php
 
-use App\Platform\Authorization\MembershipAuthorizer;
-use App\Platform\Authorization\TenantPermission;
-use App\Platform\Models\Tenant;
-use App\Platform\Models\User;
+use App\Platform\Supabase\SupabasePermissionAuthorizer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Route;
 
 uses(RefreshDatabase::class);
 
-function pacienteAuthorizationTenant(): Tenant
-{
-    $id = (string) Str::uuid();
-    $now = now();
+beforeEach(function () {
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('Autorização canônica requer PostgreSQL.');
+    }
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $id,
-        'name' => 'Laboratório Autorização',
-        'code' => 'authz-'.Str::lower(Str::random(8)),
-        'status' => 'active',
-        'database_name' => 'sislac_t_authz_'.Str::lower(Str::random(8)),
-        'created_at' => $now,
-        'updated_at' => $now,
+    Http::preventStrayRequests();
+    config()->set('services.supabase.url', 'https://example.supabase.co');
+    config()->set('services.supabase.publishable_key', 'test-publishable-key');
+
+    DB::unprepared(<<<'SQL'
+        CREATE OR REPLACE FUNCTION public.has_permission(_user_id uuid, _permission text)
+        RETURNS boolean
+        LANGUAGE sql
+        STABLE
+        AS $$
+            SELECT _user_id = '11111111-1111-4111-8111-111111111111'::uuid
+               AND _permission = 'visualizar_pacientes'
+        $$
+    SQL);
+
+    Http::fake([
+        'https://example.supabase.co/auth/v1/user' => Http::response([
+            'id' => '11111111-1111-4111-8111-111111111111',
+            'email' => 'analista@example.test',
+            'user_metadata' => [
+                'role' => 'admin',
+                'permissions' => ['editar_paciente'],
+            ],
+        ], 200),
     ]);
 
-    return Tenant::query()->findOrFail($id);
-}
+    Route::middleware(['supabase.auth', 'permission:visualizar_pacientes'])
+        ->get('/_test/supabase-permission-allowed', fn () => response()->json(['ok' => true]));
 
-function pacienteAuthorizationMembership(User $user, Tenant $tenant, string $role, array $extra = [], array $revoked = [], string $status = 'active'): void
-{
-    DB::connection('central')->table('memberships')->insert([
-        'user_id' => $user->getKey(),
-        'tenant_id' => $tenant->getKey(),
-        'role' => $role,
-        'status' => $status,
-        'permissions_extra' => json_encode($extra, JSON_THROW_ON_ERROR),
-        'permissions_revoked' => json_encode($revoked, JSON_THROW_ON_ERROR),
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]);
-}
-
-it('replica as permissões padrão dos papéis para pacientes', function (string $role, bool $view, bool $create, bool $edit) {
-    $user = User::factory()->create();
-    $tenant = pacienteAuthorizationTenant();
-    pacienteAuthorizationMembership($user, $tenant, $role);
-    $authorizer = app(MembershipAuthorizer::class);
-
-    expect($authorizer->allows((string) $user->getKey(), (string) $tenant->getKey(), TenantPermission::ViewPatients))->toBe($view)
-        ->and($authorizer->allows((string) $user->getKey(), (string) $tenant->getKey(), TenantPermission::CreatePatient))->toBe($create)
-        ->and($authorizer->allows((string) $user->getKey(), (string) $tenant->getKey(), TenantPermission::EditPatient))->toBe($edit);
-})->with([
-    'admin' => ['admin', true, true, true],
-    'analista' => ['analista', true, false, false],
-    'recepcionista' => ['recepcionista', true, true, true],
-    'financeiro' => ['financeiro', true, false, false],
-    'papel sem default' => ['coleta', false, false, false],
-]);
-
-it('faz revogação explícita vencer até mesmo admin', function () {
-    $user = User::factory()->create();
-    $tenant = pacienteAuthorizationTenant();
-    pacienteAuthorizationMembership($user, $tenant, 'admin', [], ['editar_paciente']);
-
-    expect(app(MembershipAuthorizer::class)->allows(
-        (string) $user->getKey(),
-        (string) $tenant->getKey(),
-        TenantPermission::EditPatient,
-    ))->toBeFalse();
+    Route::middleware(['supabase.auth', 'permission:editar_paciente'])
+        ->get('/_test/supabase-permission-denied', fn () => response()->json(['ok' => true]));
 });
 
-it('permite concessão extra quando não revogada', function () {
-    $user = User::factory()->create();
-    $tenant = pacienteAuthorizationTenant();
-    pacienteAuthorizationMembership($user, $tenant, 'coleta', ['cadastrar_paciente']);
+it('consulta a função canônica has_permission com UUID e permissão explícitos', function () {
+    $authorizer = app(SupabasePermissionAuthorizer::class);
 
-    expect(app(MembershipAuthorizer::class)->allows(
-        (string) $user->getKey(),
-        (string) $tenant->getKey(),
-        TenantPermission::CreatePatient,
-    ))->toBeTrue();
+    expect($authorizer->allows(
+        '11111111-1111-4111-8111-111111111111',
+        'visualizar_pacientes',
+    ))->toBeTrue()
+        ->and($authorizer->allows(
+            '11111111-1111-4111-8111-111111111111',
+            'editar_paciente',
+        ))->toBeFalse()
+        ->and($authorizer->allows(
+            '22222222-2222-4222-8222-222222222222',
+            'visualizar_pacientes',
+        ))->toBeFalse();
 });
 
-it('nega membership suspensa mesmo com papel admin', function () {
-    $user = User::factory()->create();
-    $tenant = pacienteAuthorizationTenant();
-    pacienteAuthorizationMembership($user, $tenant, 'admin', [], [], 'suspended');
+it('permite somente quando has_permission retorna verdadeiro', function () {
+    $this->withToken('valid-token')
+        ->getJson('/_test/supabase-permission-allowed')
+        ->assertOk()
+        ->assertJson(['ok' => true]);
+});
 
-    expect(app(MembershipAuthorizer::class)->allows(
-        (string) $user->getKey(),
-        (string) $tenant->getKey(),
-        TenantPermission::ViewPatients,
-    ))->toBeFalse();
+it('nega permissão ausente mesmo quando user_metadata tenta concedê-la', function () {
+    $this->withToken('valid-token')
+        ->getJson('/_test/supabase-permission-denied')
+        ->assertForbidden()
+        ->assertJson(['message' => 'Acesso não autorizado.']);
+
+    $source = file_get_contents(app_path('Http/Middleware/RequireSupabasePermission.php'));
+
+    expect($source)->toBeString()
+        ->not->toContain('user_metadata')
+        ->not->toContain('app_metadata');
 });

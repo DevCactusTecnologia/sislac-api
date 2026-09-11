@@ -3,7 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Platform\Supabase\SupabaseAuth;
-use App\Platform\Supabase\SupabasePrincipal;
+use App\Platform\Supabase\SupabaseAuthUser;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -24,20 +24,19 @@ final readonly class AuthenticateSupabaseUser
         }
 
         try {
-            $identity = $this->auth->user($accessToken);
+            $principal = $this->auth->user($accessToken);
         } catch (Throwable) {
             return response()->json([
                 'message' => 'Serviço de autenticação indisponível.',
             ], 503);
         }
 
-        if ($identity === null) {
+        if (! $principal instanceof SupabaseAuthUser) {
             return response()->json(['message' => 'Não autenticado.'], 401);
         }
 
-        $principal = new SupabasePrincipal($identity->id, $identity->email);
         $request->attributes->set(self::REQUEST_ATTRIBUTE, $principal);
-        $request->setUserResolver(static fn (): SupabasePrincipal => $principal);
+        $request->setUserResolver(static fn (): SupabaseAuthUser => $principal);
 
         return $next($request);
     }
