@@ -7,8 +7,74 @@ use Tests\TestCase;
 pest()->extend(TestCase::class)
     ->in('Feature');
 
+function ensureSupabaseFinanceFixtureContracts(): void
+{
+    static $applied = false;
+
+    if ($applied) {
+        return;
+    }
+
+    DB::unprepared(<<<'SQL'
+        CREATE OR REPLACE FUNCTION public.attach_saida_to_caixa()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SET search_path TO 'public', 'extensions'
+        AS $$
+        DECLARE
+            v_count int;
+            v_sessao bigint;
+        BEGIN
+            IF NEW.caixa_sessao_id IS NOT NULL THEN
+                RETURN NEW;
+            END IF;
+
+            IF NEW.foi_pago IS DISTINCT FROM TRUE THEN
+                RETURN NEW;
+            END IF;
+
+            IF COALESCE(NEW.forma_pagamento, '') NOT IN ('Dinheiro', 'PIX') THEN
+                RETURN NEW;
+            END IF;
+
+            SELECT count(*), max(id)
+              INTO v_count, v_sessao
+              FROM public.caixa_sessoes
+             WHERE status = 'aberta';
+
+            IF v_count = 1 THEN
+                NEW.caixa_sessao_id := v_sessao;
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$;
+
+        DROP TRIGGER IF EXISTS trg_saida_attach_caixa ON financeiro_saidas;
+        CREATE TRIGGER trg_saida_attach_caixa
+        BEFORE INSERT ON financeiro_saidas
+        FOR EACH ROW
+        EXECUTE FUNCTION public.attach_saida_to_caixa();
+
+        DROP TRIGGER IF EXISTS trg_saida_attach_caixa_upd ON financeiro_saidas;
+        CREATE TRIGGER trg_saida_attach_caixa_upd
+        BEFORE UPDATE ON financeiro_saidas
+        FOR EACH ROW
+        WHEN (
+            NEW.foi_pago IS TRUE
+            AND OLD.foi_pago IS DISTINCT FROM TRUE
+            AND NEW.caixa_sessao_id IS NULL
+        )
+        EXECUTE FUNCTION public.attach_saida_to_caixa();
+    SQL);
+
+    $applied = true;
+}
+
 function resetSupabaseFixture(): void
 {
+    ensureSupabaseFinanceFixtureContracts();
+
     DB::unprepared(<<<'SQL'
         TRUNCATE TABLE
             atendimento_audit,
