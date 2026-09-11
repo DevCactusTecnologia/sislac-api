@@ -12,7 +12,6 @@ final class UpdateRotinaConfig
     {
         return DB::transaction(function () use ($mode): array {
             $config = DB::table('lab_config')
-                ->where('singleton_key', 1)
                 ->lockForUpdate()
                 ->first();
 
@@ -28,12 +27,10 @@ final class UpdateRotinaConfig
                 return ['rotina_fluxo_modo' => $mode];
             }
 
-            DB::table('lab_config')
-                ->where('singleton_key', 1)
-                ->update([
-                    'rotina_fluxo_modo' => $mode,
-                    'updated_at' => now(),
-                ]);
+            DB::table('lab_config')->update([
+                'rotina_fluxo_modo' => $mode,
+                'updated_at' => now(),
+            ]);
 
             if ($mode === 'coleta_resultado') {
                 $this->normalizeToCollectionResult();
