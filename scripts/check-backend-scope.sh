@@ -41,8 +41,13 @@ if rg -n \
   -e "DB::connection\\(['\"]tenant['\"]\\)" \
   -e 'tenant_template' \
   -e 'supabase_source' \
-  app bootstrap config routes database resources scripts tests README.md docs/ARCHITECTURE.md docs/DEPLOY.md docs/SEGURANCA.md .env.example composer.json .github/workflows/ci.yml 2>/dev/null; then
-  fail "Resíduo funcional da arquitetura central/database-per-lab encontrado."
+  -e 'SupabaseSource' \
+  -e 'SupabaseContractRegistry' \
+  -e 'MigratedContractsLiveContract' \
+  -e 'PacientesLiveContract' \
+  -e 'check-supabase-contract' \
+  app bootstrap config routes database scripts tests README.md docs/ARCHITECTURE.md docs/DEPLOY.md docs/SEGURANCA.md .env.example composer.json .github/workflows/ci.yml 2>/dev/null; then
+  fail "Resíduo funcional da arquitetura central/database-per-lab/Supabase paralelo encontrado."
 fi
 
 if rg -n 'REDIS_|REVERB_|HORIZON_' .env.example; then
