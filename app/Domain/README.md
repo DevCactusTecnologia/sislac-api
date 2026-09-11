@@ -1,14 +1,14 @@
-# app/Domain — o laboratório
+# app/Domain — regras de negócio do backend
 
-Regras de negócio e models por laboratório: `Paciente`, `Atendimento`,
-`AtendimentoExame`, `Pagamento`, `Laudo`… (Fase 3).
+Esta camada contém somente regras de negócio que realmente precisam executar no backend Laravel.
 
 Regras:
 
-- Models usam a conexão padrão da requisição (que o middleware de tenancy já
-  apontou para o banco `sislac_t_XXXX` do laboratório). Nenhum model sabe qual
-  laboratório é — e não precisa saber.
-- Nada aqui importa `App\Platform\*` nem pede `DB::connection('central')`.
-- As regras clínicas e financeiras hoje em triggers do Supabase (recálculo de
-  totais e status, auditoria por diff, trilha RDC) viram serviços e testes
-  aqui, validados por concordância contra o comportamento atual.
+- usar a conexão PostgreSQL padrão, que aponta para o projeto Supabase;
+- receber identidade e autorização pelo contexto já validado na camada HTTP;
+- não duplicar no Laravel constraints, triggers, funções, RLS ou outras invariantes cuja fonte canônica já é o Supabase;
+- manter no Laravel apenas orquestração, validação e regras de negócio que exigem backend;
+- preservar operações concorrentes críticas com transações e locks quando necessários;
+- não depender de detalhes de infraestrutura que não tenham consumidor no domínio.
+
+Pacientes, Atendimentos, Rotina e Financeiro seguem essa fronteira: Laravel expõe a API e executa o backend necessário; o Supabase permanece a fonte de verdade dos dados e invariantes de banco.
