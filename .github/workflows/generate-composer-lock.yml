@@ -1,28 +1,32 @@
-name: Generate Composer Lock
+name: Finalize Composer Lock
 
 on:
   push:
     branches: [refactor/supabase-backend-simplification]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   lock:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refactor/supabase-backend-simplification
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
           tools: composer:v2
           coverage: none
-      - name: Gerar lock canônico
-        run: composer update --no-install --no-scripts --no-interaction --no-progress
-      - name: Exportar composer.lock
-        uses: actions/upload-artifact@v4
-        with:
-          name: composer-lock-generated
-          path: composer.lock
-          if-no-files-found: error
-          retention-days: 1
+      - name: Atualizar lock e remover workflow temporário
+        run: |
+          composer update --no-install --no-scripts --no-interaction --no-progress
+          rm .github/workflows/generate-composer-lock.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add composer.lock .github/workflows/generate-composer-lock.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: atualiza lock sem dependências legadas"
+          git push origin HEAD:refactor/supabase-backend-simplification
