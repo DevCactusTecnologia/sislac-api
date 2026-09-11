@@ -25,7 +25,7 @@ function resetSupabaseFixture(): void
         RESTART IDENTITY CASCADE
     SQL);
 
-    DB::table('lab_config')->where('singleton_key', 1)->update([
+    DB::table('lab_config')->update([
         'rotina_fluxo_modo' => 'completo',
         'updated_at' => now(),
     ]);
