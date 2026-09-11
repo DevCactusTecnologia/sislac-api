@@ -1,93 +1,12 @@
 <?php
 
-use App\Platform\Models\Tenant;
-use App\Platform\Models\User;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
-uses(RefreshDatabase::class);
-
 beforeEach(function () {
-    $this->rotinaConfigDatabase = 'sislac_t_rotcfg_'.Str::lower(Str::random(9));
-    rotinaConfigControlConnection()->exec('CREATE DATABASE "'.$this->rotinaConfigDatabase.'"');
-
-    $tenantId = (string) Str::uuid();
-    $now = now();
-
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
-        'name' => 'Laboratório Config Rotina',
-        'code' => 'rotcfg-'.Str::lower(Str::random(8)),
-        'status' => 'active',
-        'database_name' => $this->rotinaConfigDatabase,
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    $tenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($tenant);
-
-    Artisan::call('migrate', [
-        '--path' => database_path('migrations/tenant'),
-        '--realpath' => true,
-        '--force' => true,
-    ]);
-
-    tenancy()->end();
-
-    $this->rotinaConfigUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
-        'user_id' => $this->rotinaConfigUser->getKey(),
-        'tenant_id' => $tenantId,
-        'role' => 'admin',
-        'status' => 'active',
-        'permissions_extra' => '[]',
-        'permissions_revoked' => '[]',
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    $this->rotinaConfigTenantId = $tenantId;
-
-    Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->rotinaConfigUser->id,
-            'email' => $this->rotinaConfigUser->email,
-        ], 200),
-    ]);
-
-    $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-rotina-token');
+    resetSupabaseFixture();
+    $this->rotinaConfigUserId = configureSupabaseTestUser($this, ['configuracoes_sistema']);
 });
-
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    rotinaConfigControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->rotinaConfigDatabase.'" WITH (FORCE)');
-});
-
-function rotinaConfigControlConnection(?string $database = null): PDO
-{
-    $config = config('database.connections.central');
-    $database ??= 'postgres';
-
-    return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
-}
 
 function rotinaConfigCreateAtendimento(PDO $pdo): int
 {
@@ -148,17 +67,14 @@ function rotinaConfigExame(PDO $pdo, int $id): array
     return $statement->fetch(PDO::FETCH_ASSOC) ?: [];
 }
 
-it('lê o modo completo padrão para usuário autenticado do tenant', function () {
+it('lê o modo completo padrão para usuário autenticado', function () {
     $this->getJson('/api/rotina/config')
         ->assertOk()
         ->assertJsonPath('data.rotina_fluxo_modo', 'completo');
 });
 
 it('exige configuracoes sistema para alterar o modo', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->rotinaConfigUser->getKey())
-        ->where('tenant_id', $this->rotinaConfigTenantId)
-        ->update(['role' => 'recepcionista']);
+    setSupabaseTestPermissions($this->rotinaConfigUserId, []);
 
     $this->patchJson('/api/rotina/config', ['rotina_fluxo_modo' => 'coleta_resultado'])
         ->assertForbidden();
@@ -171,7 +87,7 @@ it('rejeita modo fora do vocabulário canônico', function () {
 });
 
 it('normaliza coletado e bancada ao encurtar para coleta resultado sem tocar pendente ou terminais', function () {
-    $pdo = rotinaConfigControlConnection($this->rotinaConfigDatabase);
+    $pdo = supabaseTestPdo();
     $atendimentoId = rotinaConfigCreateAtendimento($pdo);
 
     $pendente = rotinaConfigCreateExame($pdo, $atendimentoId, 'pendente');
@@ -200,7 +116,7 @@ it('normaliza coletado e bancada ao encurtar para coleta resultado sem tocar pen
 });
 
 it('normaliza etapas desativadas ao mudar para apenas resultado preservando rastreabilidade real existente', function () {
-    $pdo = rotinaConfigControlConnection($this->rotinaConfigDatabase);
+    $pdo = supabaseTestPdo();
     $atendimentoId = rotinaConfigCreateAtendimento($pdo);
 
     $pendente = rotinaConfigCreateExame($pdo, $atendimentoId, 'pendente');
@@ -231,7 +147,7 @@ it('normaliza etapas desativadas ao mudar para apenas resultado preservando rast
 });
 
 it('não regride exame analisado ao alongar o fluxo novamente', function () {
-    $pdo = rotinaConfigControlConnection($this->rotinaConfigDatabase);
+    $pdo = supabaseTestPdo();
 
     $this->patchJson('/api/rotina/config', ['rotina_fluxo_modo' => 'apenas_resultado'])->assertOk();
     $id = rotinaConfigCreateExame($pdo, rotinaConfigCreateAtendimento($pdo));
@@ -246,12 +162,12 @@ it('não regride exame analisado ao alongar o fluxo novamente', function () {
 });
 
 it('faz rollback da configuração quando a normalização falha', function () {
-    $pdo = rotinaConfigControlConnection($this->rotinaConfigDatabase);
+    $pdo = supabaseTestPdo();
     $atendimentoId = rotinaConfigCreateAtendimento($pdo);
     rotinaConfigCreateExame($pdo, $atendimentoId, 'coletado');
 
     $pdo->exec(<<<'SQL'
-        CREATE FUNCTION test_block_rotina_normalization()
+        CREATE OR REPLACE FUNCTION test_block_rotina_normalization()
         RETURNS trigger
         LANGUAGE plpgsql
         AS $$
@@ -268,11 +184,16 @@ it('faz rollback da configuração quando a normalização falha', function () {
         FOR EACH ROW EXECUTE FUNCTION test_block_rotina_normalization();
     SQL);
 
-    $this->withoutExceptionHandling();
+    try {
+        $this->withoutExceptionHandling();
 
-    expect(fn () => $this->patchJson('/api/rotina/config', ['rotina_fluxo_modo' => 'coleta_resultado']))
-        ->toThrow(QueryException::class);
+        expect(fn () => $this->patchJson('/api/rotina/config', ['rotina_fluxo_modo' => 'coleta_resultado']))
+            ->toThrow(QueryException::class);
 
-    expect($pdo->query('SELECT rotina_fluxo_modo FROM lab_config WHERE singleton_key = 1')?->fetchColumn())
-        ->toBe('completo');
+        expect($pdo->query('SELECT rotina_fluxo_modo FROM lab_config WHERE singleton_key = 1')?->fetchColumn())
+            ->toBe('completo');
+    } finally {
+        $pdo->exec('DROP TRIGGER IF EXISTS zzz_test_block_rotina_normalization ON atendimento_exames');
+        $pdo->exec('DROP FUNCTION IF EXISTS test_block_rotina_normalization()');
+    }
 });

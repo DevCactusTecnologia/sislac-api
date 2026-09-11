@@ -1,100 +1,16 @@
 <?php
 
-use App\Platform\Models\Tenant;
-use App\Platform\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
-uses(RefreshDatabase::class);
-
 beforeEach(function () {
-    $this->rotinaConcurrencyDatabase = 'sislac_t_rotconc_'.Str::lower(Str::random(8));
-    rotinaConcurrencyControlConnection()->exec('CREATE DATABASE "'.$this->rotinaConcurrencyDatabase.'"');
-
-    $this->rotinaConcurrencyTenantId = (string) Str::uuid();
-    $now = now();
-
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $this->rotinaConcurrencyTenantId,
-        'name' => 'Laboratório Concorrência Rotina',
-        'code' => 'rotconc-'.Str::lower(Str::random(8)),
-        'status' => 'active',
-        'database_name' => $this->rotinaConcurrencyDatabase,
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    tenancy()->initialize(Tenant::query()->findOrFail($this->rotinaConcurrencyTenantId));
-    Artisan::call('migrate', [
-        '--path' => database_path('migrations/tenant'),
-        '--realpath' => true,
-        '--force' => true,
-    ]);
-    tenancy()->end();
-
-    $this->rotinaConcurrencyUser = User::factory()->create(['name' => 'Usuário Concorrência']);
-    DB::connection('central')->table('memberships')->insert([
-        'user_id' => $this->rotinaConcurrencyUser->getKey(),
-        'tenant_id' => $this->rotinaConcurrencyTenantId,
-        'role' => 'admin',
-        'status' => 'active',
-        'permissions_extra' => '[]',
-        'permissions_revoked' => '[]',
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::preventStrayRequests();
-
-    $userId = $this->rotinaConcurrencyUser->id;
-    $userEmail = $this->rotinaConcurrencyUser->email;
-
-    Http::fake(function ($request) use ($userId, $userEmail) {
-        if ($request->hasHeader('Authorization', 'Bearer invalid-token')) {
-            return Http::response(['message' => 'invalid'], 401);
-        }
-
-        return Http::response([
-            'id' => $userId,
-            'email' => $userEmail,
-        ], 200);
-    });
-
-    $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withHeader('X-Tenant', $this->rotinaConcurrencyTenantId);
-});
-
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    rotinaConcurrencyControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->rotinaConcurrencyDatabase.'" WITH (FORCE)');
-});
-
-function rotinaConcurrencyControlConnection(?string $database = null): PDO
-{
-    $config = config('database.connections.central');
-
-    return new PDO(
-        sprintf(
-            'pgsql:host=%s;port=%s;dbname=%s',
-            $config['host'],
-            $config['port'],
-            $database ?? 'postgres',
-        ),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
+    resetSupabaseFixture();
+    $this->rotinaConcurrencyUserId = configureSupabaseTestUser(
+        $this,
+        ['registrar_coleta', 'analisar_amostra', 'cancelar_atendimento'],
+        email: 'concorrencia.rotina@example.test',
     );
-}
+});
 
 function rotinaConcurrencyCreateExame(PDO $pdo, string $targetStatus = 'pendente'): int
 {
@@ -127,7 +43,6 @@ function rotinaConcurrencyCreateExame(PDO $pdo, string $targetStatus = 'pendente
 }
 
 function rotinaConcurrencyTransitionProcess(
-    string $database,
     int $examId,
     string $action,
     string $actorName,
@@ -138,23 +53,16 @@ function rotinaConcurrencyTransitionProcess(
 require getcwd().'/vendor/autoload.php';
 $app = require getcwd().'/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-$tenantConnection = config('database.connections.tenant_template');
-$tenantConnection['database'] = $argv[1];
-config([
-    'database.default' => 'tenant',
-    'database.connections.tenant' => $tenantConnection,
-]);
-Illuminate\Support\Facades\DB::purge('tenant');
-if ((int) $argv[6] > 0) {
-    usleep((int) $argv[6]);
+if ((int) $argv[5] > 0) {
+    usleep((int) $argv[5]);
 }
 try {
     $exam = app(App\Domain\Atendimentos\Actions\TransitionAtendimentoExame::class)->handle(
-        (int) $argv[2],
+        (int) $argv[1],
+        $argv[2],
         $argv[3],
         $argv[4],
-        $argv[5],
-        strtolower(str_replace(' ', '.', $argv[5])).'@example.test',
+        strtolower(str_replace(' ', '.', $argv[4])).'@example.test',
     );
     echo json_encode(['ok' => true, 'status' => $exam->getAttribute('status')], JSON_THROW_ON_ERROR);
     exit(0);
@@ -172,7 +80,6 @@ PHP;
         PHP_BINARY,
         '-r',
         $script,
-        $database,
         (string) $examId,
         $action,
         $actorId,
@@ -181,24 +88,17 @@ PHP;
     ], base_path(), null, null, 15);
 }
 
-function rotinaConcurrencyConfigProcess(string $database, string $mode, int $delayMicroseconds = 0): Process
+function rotinaConcurrencyConfigProcess(string $mode, int $delayMicroseconds = 0): Process
 {
     $script = <<<'PHP'
 require getcwd().'/vendor/autoload.php';
 $app = require getcwd().'/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-$tenantConnection = config('database.connections.tenant_template');
-$tenantConnection['database'] = $argv[1];
-config([
-    'database.default' => 'tenant',
-    'database.connections.tenant' => $tenantConnection,
-]);
-Illuminate\Support\Facades\DB::purge('tenant');
-if ((int) $argv[3] > 0) {
-    usleep((int) $argv[3]);
+if ((int) $argv[2] > 0) {
+    usleep((int) $argv[2]);
 }
 try {
-    $result = app(App\Domain\Atendimentos\Actions\UpdateRotinaConfig::class)->handle($argv[2]);
+    $result = app(App\Domain\Atendimentos\Actions\UpdateRotinaConfig::class)->handle($argv[1]);
     echo json_encode(['ok' => true, 'mode' => $result['rotina_fluxo_modo']], JSON_THROW_ON_ERROR);
     exit(0);
 } catch (Throwable $exception) {
@@ -215,18 +115,17 @@ PHP;
         PHP_BINARY,
         '-r',
         $script,
-        $database,
         $mode,
         (string) $delayMicroseconds,
     ], base_path(), null, null, 15);
 }
 
 it('serializa duas coletas concorrentes sem reescrever timestamp nem duplicar auditoria', function () {
-    $pdo = rotinaConcurrencyControlConnection($this->rotinaConcurrencyDatabase);
+    $pdo = supabaseTestPdo();
     $id = rotinaConcurrencyCreateExame($pdo);
 
-    $first = rotinaConcurrencyTransitionProcess($this->rotinaConcurrencyDatabase, $id, 'coletar', 'Coletor A');
-    $second = rotinaConcurrencyTransitionProcess($this->rotinaConcurrencyDatabase, $id, 'coletar', 'Coletor B');
+    $first = rotinaConcurrencyTransitionProcess($id, 'coletar', 'Coletor A');
+    $second = rotinaConcurrencyTransitionProcess($id, 'coletar', 'Coletor B');
 
     $first->start();
     $second->start();
@@ -248,17 +147,11 @@ it('serializa duas coletas concorrentes sem reescrever timestamp nem duplicar au
 });
 
 it('rejeita transição stale incompatível mesmo quando outra intenção vence primeiro', function () {
-    $pdo = rotinaConcurrencyControlConnection($this->rotinaConcurrencyDatabase);
+    $pdo = supabaseTestPdo();
     $id = rotinaConcurrencyCreateExame($pdo);
 
-    $collect = rotinaConcurrencyTransitionProcess($this->rotinaConcurrencyDatabase, $id, 'coletar', 'Coletor Vencedor');
-    $staleFinish = rotinaConcurrencyTransitionProcess(
-        $this->rotinaConcurrencyDatabase,
-        $id,
-        'finalizar_analise',
-        'Analista Stale',
-        100_000,
-    );
+    $collect = rotinaConcurrencyTransitionProcess($id, 'coletar', 'Coletor Vencedor');
+    $staleFinish = rotinaConcurrencyTransitionProcess($id, 'finalizar_analise', 'Analista Stale', 100_000);
 
     $collect->start();
     $staleFinish->start();
@@ -272,13 +165,13 @@ it('rejeita transição stale incompatível mesmo quando outra intenção vence 
 });
 
 it('serializa mudanças concorrentes de modo mantendo estado compatível com o modo final', function () {
-    $pdo = rotinaConcurrencyControlConnection($this->rotinaConcurrencyDatabase);
+    $pdo = supabaseTestPdo();
     rotinaConcurrencyCreateExame($pdo, 'pendente');
     rotinaConcurrencyCreateExame($pdo, 'coletado');
     rotinaConcurrencyCreateExame($pdo, 'em_bancada');
 
-    $resultOnly = rotinaConcurrencyConfigProcess($this->rotinaConcurrencyDatabase, 'apenas_resultado');
-    $collectionResult = rotinaConcurrencyConfigProcess($this->rotinaConcurrencyDatabase, 'coleta_resultado', 50_000);
+    $resultOnly = rotinaConcurrencyConfigProcess('apenas_resultado');
+    $collectionResult = rotinaConcurrencyConfigProcess('coleta_resultado', 50_000);
 
     $resultOnly->start();
     $collectionResult->start();
@@ -300,52 +193,23 @@ it('serializa mudanças concorrentes de modo mantendo estado compatível com o m
     }
 });
 
-it('não aceita sessão Laravel isolada como autenticação clínica da rotina', function () {
-    $this->actingAs($this->rotinaConcurrencyUser, 'web');
-
-    $this->getJson('/api/rotina/coleta')->assertUnauthorized();
-});
-
-it('rejeita Bearer Supabase inválido', function () {
-    $this->withToken('invalid-token')
-        ->getJson('/api/rotina/coleta')
-        ->assertUnauthorized();
-});
-
-it('rejeita X-Tenant sem membership antes de tocar no banco clínico', function () {
-    $this->withToken('valid-token')
-        ->withHeader('X-Tenant', (string) Str::uuid())
-        ->getJson('/api/rotina/coleta')
-        ->assertForbidden();
-});
-
 it('rejeita ação clínica sem a permissão específica', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->rotinaConcurrencyUser->getKey())
-        ->where('tenant_id', $this->rotinaConcurrencyTenantId)
-        ->update([
-            'role' => 'financeiro',
-            'permissions_extra' => '[]',
-        ]);
+    setSupabaseTestPermissions($this->rotinaConcurrencyUserId, []);
 
-    $pdo = rotinaConcurrencyControlConnection($this->rotinaConcurrencyDatabase);
-    $id = rotinaConcurrencyCreateExame($pdo);
+    $id = rotinaConcurrencyCreateExame(supabaseTestPdo());
 
-    $this->withToken('valid-token')
-        ->postJson('/api/rotina/exames/'.$id.'/transicao', ['acao' => 'coletar'])
+    $this->postJson('/api/rotina/exames/'.$id.'/transicao', ['acao' => 'coletar'])
         ->assertForbidden();
 });
 
 it('mantém auditoria append-only e registra evidência das transições', function () {
-    $pdo = rotinaConcurrencyControlConnection($this->rotinaConcurrencyDatabase);
+    $pdo = supabaseTestPdo();
     $id = rotinaConcurrencyCreateExame($pdo);
 
-    $this->withToken('valid-token')
-        ->postJson('/api/rotina/exames/'.$id.'/transicao', ['acao' => 'coletar'])
+    $this->postJson('/api/rotina/exames/'.$id.'/transicao', ['acao' => 'coletar'])
         ->assertOk();
 
-    $this->withToken('valid-token')
-        ->postJson('/api/rotina/exames/'.$id.'/transicao', ['acao' => 'iniciar_analise'])
+    $this->postJson('/api/rotina/exames/'.$id.'/transicao', ['acao' => 'iniciar_analise'])
         ->assertOk();
 
     $audits = $pdo->query(<<<SQL
@@ -358,8 +222,8 @@ it('mantém auditoria append-only e registra evidência das transições', funct
     SQL)?->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
     expect($audits)->toHaveCount(2)
-        ->and($audits[0]['changed_by'] ?? null)->toBe((string) $this->rotinaConcurrencyUser->getKey())
-        ->and($audits[1]['changed_by'] ?? null)->toBe((string) $this->rotinaConcurrencyUser->getKey());
+        ->and($audits[0]['changed_by'] ?? null)->toBe($this->rotinaConcurrencyUserId)
+        ->and($audits[1]['changed_by'] ?? null)->toBe($this->rotinaConcurrencyUserId);
 
     $auditId = (int) ($audits[0]['id'] ?? 0);
 

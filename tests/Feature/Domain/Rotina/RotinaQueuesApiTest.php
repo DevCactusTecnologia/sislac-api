@@ -1,121 +1,9 @@
 <?php
 
-use App\Platform\Models\Tenant;
-use App\Platform\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
-
-uses(RefreshDatabase::class);
-
 beforeEach(function () {
-    $this->rotinaQueuesDatabaseA = 'sislac_t_rotqa_'.Str::lower(Str::random(8));
-    $this->rotinaQueuesDatabaseB = 'sislac_t_rotqb_'.Str::lower(Str::random(8));
-
-    $control = rotinaQueuesControlConnection();
-    $control->exec('CREATE DATABASE "'.$this->rotinaQueuesDatabaseA.'"');
-    $control->exec('CREATE DATABASE "'.$this->rotinaQueuesDatabaseB.'"');
-
-    $now = now();
-    $this->rotinaQueuesTenantA = (string) Str::uuid();
-    $this->rotinaQueuesTenantB = (string) Str::uuid();
-
-    DB::connection('central')->table('tenants')->insert([
-        [
-            'id' => $this->rotinaQueuesTenantA,
-            'name' => 'Laboratório Fila A',
-            'code' => 'rotqa-'.Str::lower(Str::random(8)),
-            'status' => 'active',
-            'database_name' => $this->rotinaQueuesDatabaseA,
-            'created_at' => $now,
-            'updated_at' => $now,
-        ],
-        [
-            'id' => $this->rotinaQueuesTenantB,
-            'name' => 'Laboratório Fila B',
-            'code' => 'rotqb-'.Str::lower(Str::random(8)),
-            'status' => 'active',
-            'database_name' => $this->rotinaQueuesDatabaseB,
-            'created_at' => $now,
-            'updated_at' => $now,
-        ],
-    ]);
-
-    foreach ([$this->rotinaQueuesTenantA, $this->rotinaQueuesTenantB] as $tenantId) {
-        tenancy()->initialize(Tenant::query()->findOrFail($tenantId));
-        Artisan::call('migrate', [
-            '--path' => database_path('migrations/tenant'),
-            '--realpath' => true,
-            '--force' => true,
-        ]);
-        tenancy()->end();
-    }
-
-    $this->rotinaQueuesUser = User::factory()->create(['name' => 'Usuário Filas']);
-
-    DB::connection('central')->table('memberships')->insert([
-        [
-            'user_id' => $this->rotinaQueuesUser->getKey(),
-            'tenant_id' => $this->rotinaQueuesTenantA,
-            'role' => 'recepcionista',
-            'status' => 'active',
-            'permissions_extra' => '[]',
-            'permissions_revoked' => '[]',
-            'created_at' => $now,
-            'updated_at' => $now,
-        ],
-        [
-            'user_id' => $this->rotinaQueuesUser->getKey(),
-            'tenant_id' => $this->rotinaQueuesTenantB,
-            'role' => 'recepcionista',
-            'status' => 'active',
-            'permissions_extra' => '[]',
-            'permissions_revoked' => '[]',
-            'created_at' => $now,
-            'updated_at' => $now,
-        ],
-    ]);
-
-    Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->rotinaQueuesUser->id,
-            'email' => $this->rotinaQueuesUser->email,
-        ], 200),
-    ]);
-
-    $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withHeader('X-Tenant', $this->rotinaQueuesTenantA);
-    $this->withToken('valid-rotina-queues-token');
+    resetSupabaseFixture();
+    $this->rotinaQueuesUserId = configureSupabaseTestUser($this, ['visualizar_atendimentos']);
 });
-
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    $control = rotinaQueuesControlConnection();
-    $control->exec('DROP DATABASE IF EXISTS "'.$this->rotinaQueuesDatabaseA.'" WITH (FORCE)');
-    $control->exec('DROP DATABASE IF EXISTS "'.$this->rotinaQueuesDatabaseB.'" WITH (FORCE)');
-});
-
-function rotinaQueuesControlConnection(?string $database = null): PDO
-{
-    $config = config('database.connections.central');
-    $database ??= 'postgres';
-
-    return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
-}
 
 function rotinaQueuesSetMode(PDO $pdo, string $mode): void
 {
@@ -185,7 +73,7 @@ function rotinaQueuesCreateExame(
 }
 
 it('deriva filas do modo completo e exclui terminais e terceirizados', function () {
-    $pdo = rotinaQueuesControlConnection($this->rotinaQueuesDatabaseA);
+    $pdo = supabaseTestPdo();
 
     $pending = rotinaQueuesCreateExame($pdo, 'Paciente Coleta', 'pendente', 'INTERNO', '2026-09-09 14:00:00+00');
     $collected = rotinaQueuesCreateExame($pdo, 'Paciente Coletado', 'coletado', 'INTERNO', '2026-09-09 13:00:00+00');
@@ -215,7 +103,7 @@ it('deriva filas do modo completo e exclui terminais e terceirizados', function 
 });
 
 it('mantém apenas coleta habilitada no modo coleta resultado', function () {
-    $pdo = rotinaQueuesControlConnection($this->rotinaQueuesDatabaseA);
+    $pdo = supabaseTestPdo();
     rotinaQueuesSetMode($pdo, 'coleta_resultado');
     rotinaQueuesCreateExame($pdo, 'Paciente Coleta Resultado');
 
@@ -231,7 +119,7 @@ it('mantém apenas coleta habilitada no modo coleta resultado', function () {
 });
 
 it('não materializa coleta nem análise no modo apenas resultado', function () {
-    $pdo = rotinaQueuesControlConnection($this->rotinaQueuesDatabaseA);
+    $pdo = supabaseTestPdo();
     rotinaQueuesSetMode($pdo, 'apenas_resultado');
     rotinaQueuesCreateExame($pdo, 'Paciente Apenas Resultado');
 
@@ -244,30 +132,8 @@ it('não materializa coleta nem análise no modo apenas resultado', function () 
         ->assertExactJson(['enabled' => false, 'data' => []]);
 });
 
-it('isola filas entre bancos físicos de tenants autorizados', function () {
-    $pdoA = rotinaQueuesControlConnection($this->rotinaQueuesDatabaseA);
-    $pdoB = rotinaQueuesControlConnection($this->rotinaQueuesDatabaseB);
-    rotinaQueuesCreateExame($pdoA, 'Paciente Tenant A');
-    rotinaQueuesCreateExame($pdoB, 'Paciente Tenant B');
-
-    $this->withHeader('X-Tenant', $this->rotinaQueuesTenantA)
-        ->getJson('/api/rotina/coleta')
-        ->assertOk()
-        ->assertJsonCount(1, 'data')
-        ->assertJsonPath('data.0.paciente_nome', 'Paciente Tenant A');
-
-    $this->withHeader('X-Tenant', $this->rotinaQueuesTenantB)
-        ->getJson('/api/rotina/coleta')
-        ->assertOk()
-        ->assertJsonCount(1, 'data')
-        ->assertJsonPath('data.0.paciente_nome', 'Paciente Tenant B');
-});
-
 it('exige visualizar atendimentos nas duas filas', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->rotinaQueuesUser->getKey())
-        ->where('tenant_id', $this->rotinaQueuesTenantA)
-        ->update(['permissions_revoked' => json_encode(['visualizar_atendimentos'])]);
+    setSupabaseTestPermissions($this->rotinaQueuesUserId, []);
 
     $this->getJson('/api/rotina/coleta')->assertForbidden();
     $this->getJson('/api/rotina/analise')->assertForbidden();

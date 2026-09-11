@@ -1,92 +1,15 @@
 <?php
 
-use App\Platform\Models\Tenant;
-use App\Platform\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
-uses(RefreshDatabase::class);
-
 beforeEach(function () {
-    $this->rotinaTransitionDatabase = 'sislac_t_rottr_'.Str::lower(Str::random(9));
-    rotinaTransitionControlConnection()->exec('CREATE DATABASE "'.$this->rotinaTransitionDatabase.'"');
-
-    $tenantId = (string) Str::uuid();
-    $now = now();
-
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
-        'name' => 'Laboratório Transição Rotina',
-        'code' => 'rottr-'.Str::lower(Str::random(8)),
-        'status' => 'active',
-        'database_name' => $this->rotinaTransitionDatabase,
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    $tenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($tenant);
-
-    Artisan::call('migrate', [
-        '--path' => database_path('migrations/tenant'),
-        '--realpath' => true,
-        '--force' => true,
-    ]);
-
-    tenancy()->end();
-
-    $this->rotinaTransitionUser = User::factory()->create(['name' => 'Analista Rotina']);
-    DB::connection('central')->table('memberships')->insert([
-        'user_id' => $this->rotinaTransitionUser->getKey(),
-        'tenant_id' => $tenantId,
-        'role' => 'admin',
-        'status' => 'active',
-        'permissions_extra' => '[]',
-        'permissions_revoked' => '[]',
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    $this->rotinaTransitionTenantId = $tenantId;
-
-    Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->rotinaTransitionUser->id,
-            'email' => $this->rotinaTransitionUser->email,
-        ], 200),
-    ]);
-
-    $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-rotina-transition-token');
-});
-
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    rotinaTransitionControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->rotinaTransitionDatabase.'" WITH (FORCE)');
-});
-
-function rotinaTransitionControlConnection(?string $database = null): PDO
-{
-    $config = config('database.connections.central');
-    $database ??= 'postgres';
-
-    return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
+    resetSupabaseFixture();
+    $this->rotinaTransitionUserId = configureSupabaseTestUser(
+        $this,
+        ['registrar_coleta', 'analisar_amostra', 'cancelar_atendimento'],
+        email: 'analista.rotina@example.test',
     );
-}
+});
 
 function rotinaTransitionSetMode(PDO $pdo, string $mode): void
 {
@@ -141,7 +64,7 @@ function rotinaTransitionExame(PDO $pdo, int $id): array
 }
 
 it('coleta exame no modo completo com timestamp e responsável server-side', function () {
-    $pdo = rotinaTransitionControlConnection($this->rotinaTransitionDatabase);
+    $pdo = supabaseTestPdo();
     $id = rotinaTransitionCreateExame($pdo);
 
     $this->postJson('/api/rotina/exames/'.$id.'/transicao', ['acao' => 'coletar'])
@@ -151,11 +74,11 @@ it('coleta exame no modo completo com timestamp e responsável server-side', fun
     $row = rotinaTransitionExame($pdo, $id);
     expect($row['status'] ?? null)->toBe('coletado')
         ->and($row['data_coleta'] ?? null)->not->toBeNull()
-        ->and($row['coletor'] ?? null)->toBe('Analista Rotina');
+        ->and($row['coletor'] ?? null)->toBe('analista.rotina@example.test');
 });
 
 it('executa análise completa em duas intenções', function () {
-    $pdo = rotinaTransitionControlConnection($this->rotinaTransitionDatabase);
+    $pdo = supabaseTestPdo();
     $id = rotinaTransitionCreateExame($pdo, 'coletado');
 
     $this->postJson('/api/rotina/exames/'.$id.'/transicao', ['acao' => 'iniciar_analise'])
@@ -168,11 +91,11 @@ it('executa análise completa em duas intenções', function () {
 
     $row = rotinaTransitionExame($pdo, $id);
     expect($row['data_analise'] ?? null)->not->toBeNull()
-        ->and($row['analista'] ?? null)->toBe('Analista Rotina');
+        ->and($row['analista'] ?? null)->toBe('analista.rotina@example.test');
 });
 
 it('coletar no modo coleta resultado termina efetivamente analisado', function () {
-    $pdo = rotinaTransitionControlConnection($this->rotinaTransitionDatabase);
+    $pdo = supabaseTestPdo();
     rotinaTransitionSetMode($pdo, 'coleta_resultado');
     $id = rotinaTransitionCreateExame($pdo);
 
@@ -187,7 +110,7 @@ it('coletar no modo coleta resultado termina efetivamente analisado', function (
 });
 
 it('recoleta sem gerar nova cobrança e limpa o ciclo descartado', function () {
-    $pdo = rotinaTransitionControlConnection($this->rotinaTransitionDatabase);
+    $pdo = supabaseTestPdo();
     $id = rotinaTransitionCreateExame($pdo, 'analisado');
 
     $pdo->prepare("UPDATE atendimento_exames SET coletor = 'Coletor Antigo', analista = 'Analista Antigo', data_coleta = now(), data_analise = now() WHERE id = ?")
@@ -206,7 +129,7 @@ it('recoleta sem gerar nova cobrança e limpa o ciclo descartado', function () {
 });
 
 it('recoleta em apenas resultado não cria etapa desativada', function () {
-    $pdo = rotinaTransitionControlConnection($this->rotinaTransitionDatabase);
+    $pdo = supabaseTestPdo();
     rotinaTransitionSetMode($pdo, 'apenas_resultado');
     $id = rotinaTransitionCreateExame($pdo);
 
@@ -222,7 +145,7 @@ it('recoleta em apenas resultado não cria etapa desativada', function () {
 });
 
 it('exige motivo não vazio para cancelar e preserva timestamps clínicos', function () {
-    $pdo = rotinaTransitionControlConnection($this->rotinaTransitionDatabase);
+    $pdo = supabaseTestPdo();
     $id = rotinaTransitionCreateExame($pdo, 'coletado');
     $before = rotinaTransitionExame($pdo, $id);
 
@@ -241,8 +164,8 @@ it('exige motivo não vazio para cancelar e preserva timestamps clínicos', func
     expect($after['data_coleta'] ?? null)->toBe($before['data_coleta'] ?? null);
 });
 
-it('não reabre exame finalizado por recoleta nesta onda', function () {
-    $pdo = rotinaTransitionControlConnection($this->rotinaTransitionDatabase);
+it('não reabre exame finalizado por recoleta', function () {
+    $pdo = supabaseTestPdo();
     $id = rotinaTransitionCreateExame($pdo, 'finalizado');
 
     $this->postJson('/api/rotina/exames/'.$id.'/transicao', ['acao' => 'recoletar'])
@@ -255,7 +178,7 @@ it('retorna 404 para ocorrência inexistente', function () {
 });
 
 it('rejeita estado e timestamps enviados diretamente pelo cliente', function () {
-    $pdo = rotinaTransitionControlConnection($this->rotinaTransitionDatabase);
+    $pdo = supabaseTestPdo();
     $id = rotinaTransitionCreateExame($pdo);
 
     $this->postJson('/api/rotina/exames/'.$id.'/transicao', [
@@ -267,15 +190,9 @@ it('rejeita estado e timestamps enviados diretamente pelo cliente', function () 
 });
 
 it('aplica permissão específica para cada intenção', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->rotinaTransitionUser->getKey())
-        ->where('tenant_id', $this->rotinaTransitionTenantId)
-        ->update([
-            'role' => 'financeiro',
-            'permissions_extra' => json_encode(['registrar_coleta']),
-        ]);
+    setSupabaseTestPermissions($this->rotinaTransitionUserId, ['registrar_coleta']);
 
-    $pdo = rotinaTransitionControlConnection($this->rotinaTransitionDatabase);
+    $pdo = supabaseTestPdo();
     $coletaId = rotinaTransitionCreateExame($pdo);
     $analiseId = rotinaTransitionCreateExame($pdo, 'coletado');
 
@@ -292,7 +209,7 @@ it('aplica permissão específica para cada intenção', function () {
 });
 
 it('registra usuário e justificativa na auditoria existente', function () {
-    $pdo = rotinaTransitionControlConnection($this->rotinaTransitionDatabase);
+    $pdo = supabaseTestPdo();
     $id = rotinaTransitionCreateExame($pdo, 'coletado');
 
     $this->postJson('/api/rotina/exames/'.$id.'/transicao', [
@@ -312,7 +229,7 @@ it('registra usuário e justificativa na auditoria existente', function () {
     $statement->execute([$id]);
     $audit = $statement->fetch(PDO::FETCH_ASSOC) ?: [];
 
-    expect($audit['changed_by'] ?? null)->toBe((string) $this->rotinaTransitionUser->getKey())
-        ->and($audit['changed_by_email'] ?? null)->toBe($this->rotinaTransitionUser->email)
+    expect($audit['changed_by'] ?? null)->toBe($this->rotinaTransitionUserId)
+        ->and($audit['changed_by_email'] ?? null)->toBe('analista.rotina@example.test')
         ->and($audit['justificativa'] ?? null)->toBe('Amostra hemolisada');
 });
