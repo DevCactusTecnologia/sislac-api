@@ -31,23 +31,23 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class)->name('api.health');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_pacientes'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:visualizar_pacientes'])
     ->prefix('pacientes')
     ->group(function () {
         Route::get('/', ListPacientesController::class)->name('pacientes.index');
         Route::get('/{id}', ShowPacienteController::class)->whereNumber('id')->name('pacientes.show');
     });
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:cadastrar_paciente'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:cadastrar_paciente'])
     ->post('/pacientes', CreatePacienteController::class)
     ->name('pacientes.store');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:editar_paciente'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:editar_paciente'])
     ->patch('/pacientes/{id}', UpdatePacienteController::class)
     ->whereNumber('id')
     ->name('pacientes.update');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_atendimentos'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:visualizar_atendimentos'])
     ->prefix('atendimentos')
     ->group(function () {
         Route::get('/', ListAtendimentosController::class)->name('atendimentos.index');
@@ -60,81 +60,81 @@ Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_aten
             ->name('atendimentos.show');
     });
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:criar_atendimento'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:criar_atendimento'])
     ->post('/atendimentos', StoreAtendimentoController::class)
     ->name('atendimentos.store');
 
-Route::middleware(['supabase.auth', 'tenant'])
+Route::middleware(['supabase.auth', 'supabase.db'])
     ->patch('/atendimentos/{id}', UpdateAtendimentoController::class)
     ->whereNumber('id')
     ->name('atendimentos.update');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_atendimentos'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:visualizar_atendimentos'])
     ->get('/financeiro/a-receber/pacientes', ListAReceberPacientesController::class)
     ->name('financeiro.a-receber.pacientes');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_atendimentos'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:visualizar_atendimentos'])
     ->get('/financeiro/recebimentos/pacientes', ListRecebimentosPacientesController::class)
     ->name('financeiro.recebimentos.pacientes');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:registrar_pagamento'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:registrar_pagamento'])
     ->post('/financeiro/atendimentos/{id}/pagamentos', RegisterPacientePaymentController::class)
     ->whereNumber('id')
     ->name('financeiro.pagamentos.store');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financeira'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:gestao_financeira'])
     ->post('/financeiro/pagamentos/{id}/estorno', ReversePacientePaymentController::class)
     ->whereNumber('id')
     ->name('financeiro.pagamentos.estorno');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_financeiro'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:visualizar_financeiro'])
     ->get('/financeiro/saidas', ListFinanceiroSaidasController::class)
     ->name('financeiro.saidas.index');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financeira'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:gestao_financeira'])
     ->post('/financeiro/saidas', CreateFinanceiroSaidaController::class)
     ->name('financeiro.saidas.store');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financeira'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:gestao_financeira'])
     ->patch('/financeiro/saidas/{id}', UpdateFinanceiroSaidaController::class)
     ->whereNumber('id')
     ->name('financeiro.saidas.update');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financeira'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:gestao_financeira'])
     ->post('/financeiro/saidas/{id}/estorno', ReverseFinanceiroSaidaController::class)
     ->whereNumber('id')
     ->name('financeiro.saidas.estorno');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_financeiro'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:visualizar_financeiro'])
     ->get('/financeiro/caixa/aberto', ShowOpenCaixaController::class)
     ->name('financeiro.caixa.aberto');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financeira'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:gestao_financeira'])
     ->post('/financeiro/caixa/abrir', OpenCaixaController::class)
     ->name('financeiro.caixa.abrir');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:gestao_financeira'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:gestao_financeira'])
     ->post('/financeiro/caixa/{id}/fechar', CloseCaixaController::class)
     ->whereNumber('id')
     ->name('financeiro.caixa.fechar');
 
-Route::middleware(['supabase.auth', 'tenant'])
+Route::middleware(['supabase.auth', 'supabase.db'])
     ->get('/rotina/config', ShowRotinaConfigController::class)
     ->name('rotina.config.show');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:configuracoes_sistema'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:configuracoes_sistema'])
     ->patch('/rotina/config', UpdateRotinaConfigController::class)
     ->name('rotina.config.update');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_atendimentos'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:visualizar_atendimentos'])
     ->get('/rotina/coleta', ListRotinaColetaController::class)
     ->name('rotina.coleta.index');
 
-Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_atendimentos'])
+Route::middleware(['supabase.auth', 'supabase.db', 'permission:visualizar_atendimentos'])
     ->get('/rotina/analise', ListRotinaAnaliseController::class)
     ->name('rotina.analise.index');
 
-Route::middleware(['supabase.auth', 'tenant'])
+Route::middleware(['supabase.auth', 'supabase.db'])
     ->post('/rotina/exames/{id}/transicao', TransitionRotinaExameController::class)
     ->whereNumber('id')
     ->name('rotina.exames.transition');

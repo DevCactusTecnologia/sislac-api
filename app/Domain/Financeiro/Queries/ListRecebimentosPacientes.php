@@ -19,8 +19,7 @@ final class ListRecebimentosPacientes
     {
         $limit = max(1, min(100, (int) ($filters['limit'] ?? self::DEFAULT_LIMIT)));
 
-        $query = DB::connection('tenant')
-            ->table('atendimento_pagamentos as p')
+        $query = DB::table('atendimento_pagamentos as p')
             ->join('atendimentos as a', 'a.id', '=', 'p.atendimento_id')
             ->where('a.status_atendimento', '<>', 'Cancelado')
             ->whereRaw("COALESCE(p.status_pagamento, 'efetuado') <> 'estornado'")

@@ -10,8 +10,7 @@ final class ShowRotinaConfigController extends Controller
 {
     public function __invoke(): JsonResponse
     {
-        $mode = DB::connection('tenant')
-            ->table('lab_config')
+        $mode = DB::table('lab_config')
             ->where('singleton_key', 1)
             ->value('rotina_fluxo_modo');
 

@@ -2,9 +2,7 @@
 
 use App\Http\Middleware\ApplySupabaseDatabaseContext;
 use App\Http\Middleware\AuthenticateSupabaseUser;
-use App\Http\Middleware\EnsureTenantContext;
 use App\Http\Middleware\RequireSupabasePermission;
-use App\Http\Middleware\RequireTenantPermission;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -28,9 +26,6 @@ return Application::configure(basePath: dirname(__DIR__))
             'supabase.auth' => AuthenticateSupabaseUser::class,
             'supabase.db' => ApplySupabaseDatabaseContext::class,
             'permission' => RequireSupabasePermission::class,
-            // Compatibilidade transitória até os módulos deixarem a tenancy física.
-            'tenant' => EnsureTenantContext::class,
-            'tenant.permission' => RequireTenantPermission::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -18,7 +18,7 @@ final class ListAReceberPacientes
     public function handle(array $filters): array
     {
         $limit = max(1, min(100, (int) ($filters['limit'] ?? self::DEFAULT_LIMIT)));
-        $connection = DB::connection('tenant');
+        $connection = DB::connection();
 
         $exames = $connection->table('atendimento_exames')
             ->selectRaw('atendimento_id, SUM(valor)::numeric(14,2) AS valor_total')

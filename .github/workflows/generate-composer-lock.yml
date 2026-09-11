@@ -1,0 +1,28 @@
+name: Generate Composer Lock
+
+on:
+  push:
+    branches: [refactor/supabase-backend-simplification]
+
+permissions:
+  contents: read
+
+jobs:
+  lock:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+          coverage: none
+      - name: Gerar lock canônico
+        run: composer update --lock --no-install --no-scripts --no-interaction --no-progress
+      - name: Exportar composer.lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: composer-lock-generated
+          path: composer.lock
+          if-no-files-found: error
+          retention-days: 1

@@ -6,8 +6,8 @@ use App\Domain\Atendimentos\Actions\UpdateAtendimento;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Atendimentos\UpdateAtendimentoRequest;
 use App\Http\Resources\Atendimentos\AtendimentoResource;
-use App\Platform\Authorization\MembershipAuthorizer;
-use App\Platform\Authorization\TenantPermission;
+use App\Platform\Supabase\SupabaseAuthUser;
+use App\Platform\Supabase\SupabasePermissionAuthorizer;
 use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
@@ -17,18 +17,17 @@ final class UpdateAtendimentoController extends Controller
     public function __invoke(
         UpdateAtendimentoRequest $request,
         UpdateAtendimento $updateAtendimento,
-        MembershipAuthorizer $authorizer,
+        SupabasePermissionAuthorizer $authorizer,
         int $id,
     ): JsonResponse {
         $payload = $request->validated();
         $user = $request->user();
-        $userId = $user?->getAuthIdentifier();
-        $tenantId = $request->attributes->get('tenant_id');
 
-        if (! is_string($userId) || ! is_string($tenantId)) {
+        if (! $user instanceof SupabaseAuthUser) {
             return response()->json(['message' => 'Acesso não autorizado.'], 403);
         }
 
+        $userId = $user->getKey();
         $requiresEdit = $this->requiresEditPermission($payload);
         $requiresCancel = ($payload['cancelar'] ?? false) === true;
 
@@ -38,11 +37,11 @@ final class UpdateAtendimentoController extends Controller
             ]);
         }
 
-        if ($requiresEdit && ! $authorizer->allows($userId, $tenantId, TenantPermission::EditAppointment)) {
+        if ($requiresEdit && ! $authorizer->allows($userId, 'editar_atendimento')) {
             return response()->json(['message' => 'Acesso não autorizado.'], 403);
         }
 
-        if ($requiresCancel && ! $authorizer->allows($userId, $tenantId, TenantPermission::CancelAppointment)) {
+        if ($requiresCancel && ! $authorizer->allows($userId, 'cancelar_atendimento')) {
             return response()->json(['message' => 'Acesso não autorizado.'], 403);
         }
 

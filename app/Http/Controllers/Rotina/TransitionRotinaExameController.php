@@ -4,12 +4,9 @@ namespace App\Http\Controllers\Rotina;
 
 use App\Domain\Atendimentos\Actions\TransitionAtendimentoExame;
 use App\Http\Controllers\Controller;
-use App\Http\Middleware\AuthenticateSupabaseUser;
 use App\Http\Requests\Rotina\TransitionRotinaExameRequest;
-use App\Platform\Authorization\MembershipAuthorizer;
-use App\Platform\Authorization\TenantPermission;
-use App\Platform\Models\User;
 use App\Platform\Supabase\SupabaseAuthUser;
+use App\Platform\Supabase\SupabasePermissionAuthorizer;
 use DomainException;
 use Illuminate\Http\JsonResponse;
 use LogicException;
@@ -19,40 +16,33 @@ final class TransitionRotinaExameController extends Controller
     public function __invoke(
         TransitionRotinaExameRequest $request,
         TransitionAtendimentoExame $transition,
-        MembershipAuthorizer $authorizer,
+        SupabasePermissionAuthorizer $authorizer,
         int $id,
     ): JsonResponse {
         $payload = $request->validated();
         $action = $payload['acao'] ?? null;
-        $principal = $request->attributes->get(AuthenticateSupabaseUser::REQUEST_ATTRIBUTE);
-        $tenantId = $request->attributes->get('tenant_id');
+        $principal = $request->user();
 
-        if (! is_string($action) || ! $principal instanceof SupabaseAuthUser || ! is_string($tenantId)) {
+        if (! is_string($action) || ! $principal instanceof SupabaseAuthUser) {
             return response()->json(['message' => 'Acesso não autorizado.'], 403);
         }
 
         $permission = match ($action) {
-            'coletar', 'recoletar' => TenantPermission::RegisterCollection,
-            'iniciar_analise', 'finalizar_analise' => TenantPermission::AnalyzeSample,
-            'cancelar' => TenantPermission::CancelAppointment,
+            'coletar', 'recoletar' => 'registrar_coleta',
+            'iniciar_analise', 'finalizar_analise' => 'analisar_amostra',
+            'cancelar' => 'cancelar_atendimento',
             default => throw new LogicException('Ação de rotina não reconhecida.'),
         };
 
         $userId = $principal->getKey();
 
-        if (! $authorizer->allows($userId, $tenantId, $permission)) {
+        if (! $authorizer->allows($userId, $permission)) {
             return response()->json(['message' => 'Acesso não autorizado.'], 403);
         }
 
-        // Compatibilidade transitória enquanto memberships/central ainda existem nesta etapa.
-        // A Task 3 remove este lookup junto com a autorização central.
-        $centralUser = User::query()->find($userId);
         $email = $principal->getAttribute('email');
         $actorEmail = is_string($email) ? $email : '';
-        $centralName = $centralUser?->getAttribute('name');
-        $actorName = is_string($centralName) && trim($centralName) !== ''
-            ? trim($centralName)
-            : $actorEmail;
+        $actorName = $actorEmail !== '' ? $actorEmail : $userId;
         $reason = $payload['motivo'] ?? null;
 
         try {

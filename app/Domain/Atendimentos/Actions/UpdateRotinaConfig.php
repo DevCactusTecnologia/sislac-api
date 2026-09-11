@@ -10,9 +10,8 @@ final class UpdateRotinaConfig
     /** @return array{rotina_fluxo_modo: string} */
     public function handle(string $mode): array
     {
-        return DB::connection('tenant')->transaction(function () use ($mode): array {
-            $connection = DB::connection('tenant');
-            $config = $connection->table('lab_config')
+        return DB::transaction(function () use ($mode): array {
+            $config = DB::table('lab_config')
                 ->where('singleton_key', 1)
                 ->lockForUpdate()
                 ->first();
@@ -29,7 +28,7 @@ final class UpdateRotinaConfig
                 return ['rotina_fluxo_modo' => $mode];
             }
 
-            $connection->table('lab_config')
+            DB::table('lab_config')
                 ->where('singleton_key', 1)
                 ->update([
                     'rotina_fluxo_modo' => $mode,
@@ -48,7 +47,7 @@ final class UpdateRotinaConfig
 
     private function normalizeToCollectionResult(): void
     {
-        DB::connection('tenant')->statement(<<<'SQL'
+        DB::statement(<<<'SQL'
             UPDATE atendimento_exames
                SET status = 'analisado',
                    data_analise = COALESCE(data_analise, now()),
@@ -64,7 +63,7 @@ final class UpdateRotinaConfig
 
     private function normalizeToResultOnly(): void
     {
-        DB::connection('tenant')->statement(<<<'SQL'
+        DB::statement(<<<'SQL'
             UPDATE atendimento_exames
                SET status = 'analisado',
                    data_coleta = COALESCE(data_coleta, now()),
