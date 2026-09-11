@@ -53,7 +53,7 @@ final class ListPacientes
         if ($hasMore && $data->isNotEmpty()) {
             /** @var Paciente $last */
             $last = $data->last();
-            $nextCursor = PacienteCursor::encode((string) $last->updated_at, (int) $last->getKey());
+            $nextCursor = PacienteCursor::encode((string) $last->getAttribute('updated_at'), (int) $last->getKey());
         }
 
         return [
