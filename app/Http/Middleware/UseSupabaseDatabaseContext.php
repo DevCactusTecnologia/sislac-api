@@ -12,7 +12,7 @@ final readonly class UseSupabaseDatabaseContext
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $user = $request->user();
+        $user = $request->attributes->get(AuthenticateSupabaseUser::REQUEST_ATTRIBUTE);
 
         if (! $user instanceof SupabasePrincipal) {
             return response()->json(['message' => 'Não autenticado.'], 401);

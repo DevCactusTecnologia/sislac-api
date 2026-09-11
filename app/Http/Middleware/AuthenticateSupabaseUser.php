@@ -11,6 +11,8 @@ use Throwable;
 
 final readonly class AuthenticateSupabaseUser
 {
+    public const REQUEST_ATTRIBUTE = 'supabase_principal';
+
     public function __construct(private SupabaseAuth $auth) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -34,6 +36,7 @@ final readonly class AuthenticateSupabaseUser
         }
 
         $principal = new SupabasePrincipal($identity->id, $identity->email);
+        $request->attributes->set(self::REQUEST_ATTRIBUTE, $principal);
         $request->setUserResolver(static fn (): SupabasePrincipal => $principal);
 
         return $next($request);
