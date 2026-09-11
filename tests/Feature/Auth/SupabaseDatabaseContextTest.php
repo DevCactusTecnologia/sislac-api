@@ -21,7 +21,36 @@ beforeEach(function () {
                 END IF;
             END
             $$;
+
+            CREATE SCHEMA IF NOT EXISTS auth;
+
+            CREATE OR REPLACE FUNCTION auth.uid()
+            RETURNS uuid
+            LANGUAGE sql
+            STABLE
+            AS $$
+                SELECT COALESCE(
+                    NULLIF(current_setting('request.jwt.claim.sub', true), ''),
+                    (NULLIF(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')
+                )::uuid
+            $$;
+
+            CREATE OR REPLACE FUNCTION auth.role()
+            RETURNS text
+            LANGUAGE sql
+            STABLE
+            AS $$
+                SELECT COALESCE(
+                    NULLIF(current_setting('request.jwt.claim.role', true), ''),
+                    (NULLIF(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role')
+                )::text
+            $$;
+
+            GRANT USAGE ON SCHEMA auth TO authenticated;
+            GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated;
+            GRANT EXECUTE ON FUNCTION auth.role() TO authenticated;
         SQL);
+
         DB::statement('CREATE TABLE IF NOT EXISTS public.__supabase_rls_rollback_probe (id uuid PRIMARY KEY)');
         DB::statement('GRANT SELECT, INSERT, DELETE ON public.__supabase_rls_rollback_probe TO authenticated');
     } finally {
@@ -44,16 +73,16 @@ beforeEach(function () {
             $state = DB::selectOne(<<<'SQL'
                 SELECT
                     current_user AS db_role,
-                    current_setting('request.jwt.claim.sub', true) AS jwt_sub,
-                    current_setting('request.jwt.claim.role', true) AS jwt_role,
+                    auth.uid()::text AS auth_uid,
+                    auth.role() AS auth_role,
                     current_setting('request.jwt.claims', true) AS jwt_claims
             SQL);
 
             return response()->json([
                 'user_id' => $request->user()?->getAuthIdentifier(),
                 'db_role' => $state?->db_role,
-                'jwt_sub' => $state?->jwt_sub,
-                'jwt_role' => $state?->jwt_role,
+                'auth_uid' => $state?->auth_uid,
+                'auth_role' => $state?->auth_role,
                 'jwt_claims' => json_decode((string) ($state?->jwt_claims ?? ''), true),
             ]);
         });
@@ -67,8 +96,8 @@ it('aplica identidade Supabase e role authenticated somente dentro da transaçã
         ->assertOk()
         ->assertJsonPath('user_id', $userId)
         ->assertJsonPath('db_role', 'authenticated')
-        ->assertJsonPath('jwt_sub', $userId)
-        ->assertJsonPath('jwt_role', 'authenticated')
+        ->assertJsonPath('auth_uid', $userId)
+        ->assertJsonPath('auth_role', 'authenticated')
         ->assertJsonPath('jwt_claims.sub', $userId)
         ->assertJsonPath('jwt_claims.role', 'authenticated')
         ->assertJsonPath('jwt_claims.email', 'rls@example.test');
@@ -76,13 +105,13 @@ it('aplica identidade Supabase e role authenticated somente dentro da transaçã
     $after = DB::selectOne(<<<'SQL'
         SELECT
             current_user AS db_role,
-            current_setting('request.jwt.claim.sub', true) AS jwt_sub,
-            current_setting('request.jwt.claim.role', true) AS jwt_role
+            auth.uid()::text AS auth_uid,
+            auth.role() AS auth_role
     SQL);
 
     expect((string) ($after?->db_role ?? ''))->not->toBe('authenticated')
-        ->and((string) ($after?->jwt_sub ?? ''))->not->toBe($userId)
-        ->and((string) ($after?->jwt_role ?? ''))->not->toBe('authenticated');
+        ->and($after?->auth_uid)->toBeNull()
+        ->and($after?->auth_role)->toBeNull();
 });
 
 it('faz rollback e não deixa contexto RLS vazar quando o endpoint falha', function () {
@@ -103,10 +132,12 @@ it('faz rollback e não deixa contexto RLS vazar quando o endpoint falha', funct
     $after = DB::selectOne(<<<'SQL'
         SELECT
             current_user AS db_role,
-            current_setting('request.jwt.claim.sub', true) AS jwt_sub
+            auth.uid()::text AS auth_uid,
+            auth.role() AS auth_role
     SQL);
 
     expect((string) ($after?->db_role ?? ''))->not->toBe('authenticated')
-        ->and((string) ($after?->jwt_sub ?? ''))->not->toBe('22222222-2222-4222-8222-222222222222')
+        ->and($after?->auth_uid)->toBeNull()
+        ->and($after?->auth_role)->toBeNull()
         ->and(DB::table('__supabase_rls_rollback_probe')->where('id', $probeId)->exists())->toBeFalse();
 });
