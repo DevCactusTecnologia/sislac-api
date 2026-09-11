@@ -28,6 +28,19 @@ it('mantém somente a fundação Laravel sobre Supabase', function () {
         ->and($routes)->not->toContain('/admin');
 });
 
+it('não mantém a infraestrutura paralela de comparação com o Supabase', function () {
+    foreach ([
+        app_path('Console/Commands/CheckSupabaseLiveContract.php'),
+        app_path('Platform/Supabase/MigratedContractsLiveContract.php'),
+        app_path('Platform/Supabase/PacientesLiveContract.php'),
+        app_path('Platform/Supabase/SupabaseContractRegistry.php'),
+        app_path('Platform/Supabase/SupabaseSource.php'),
+        base_path('scripts/check-supabase-contract.php'),
+    ] as $legacyPath) {
+        expect(file_exists($legacyPath))->toBeFalse($legacyPath);
+    }
+});
+
 it('não mantém variáveis nem aliases da arquitetura removida', function () {
     $env = (string) file_get_contents(base_path('.env.example'));
     $bootstrap = (string) file_get_contents(base_path('bootstrap/app.php'));
