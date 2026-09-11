@@ -13,7 +13,7 @@ final readonly class SupabasePermissionAuthorizer
             [$userId, $permission],
         );
 
-        $allowed = $row?->allowed ?? false;
+        $allowed = $row->allowed ?? false;
 
         return in_array($allowed, [true, 1, '1', 't', 'true'], true);
     }
