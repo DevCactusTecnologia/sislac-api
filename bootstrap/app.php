@@ -3,8 +3,8 @@
 use App\Http\Middleware\ApplySupabaseDatabaseContext;
 use App\Http\Middleware\AuthenticateSupabaseUser;
 use App\Http\Middleware\EnsureTenantContext;
-use App\Http\Middleware\RequireSuperAdmin;
 use App\Http\Middleware\RequireSupabasePermission;
+use App\Http\Middleware\RequireSuperAdmin;
 use App\Http\Middleware\RequireTenantPermission;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
