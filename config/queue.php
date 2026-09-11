@@ -8,15 +8,4 @@ return [
             'driver' => 'sync',
         ],
     ],
-
-    'batching' => [
-        'database' => env('DB_CONNECTION', 'pgsql'),
-        'table' => 'job_batches',
-    ],
-
-    'failed' => [
-        'driver' => env('QUEUE_FAILED_DRIVER', 'null'),
-        'database' => env('DB_CONNECTION', 'pgsql'),
-        'table' => 'failed_jobs',
-    ],
 ];
