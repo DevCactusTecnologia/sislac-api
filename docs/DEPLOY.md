@@ -1,165 +1,132 @@
-# Deploy — VPS (Ubuntu 24.04)
+# Deploy — SISLAC API
 
-Este guia descreve somente a fundação atualmente implementada. O frontend permanece separado em `sislac.com.br` e a API Laravel em `api.sislac.com.br`.
+## Topologia
 
-## Arquitetura implantada
+A API Laravel pode ser hospedada em um VPS Linux simples. O banco, autenticação e arquivos permanecem no Supabase; portanto o servidor da API não precisa hospedar PostgreSQL, painel de banco ou stack de containers para a aplicação funcionar.
 
-A VPS executa via Docker Compose:
+```text
+Internet
+   |
+Nginx / TLS
+   |
+PHP 8.4 + Laravel
+   |
+Supabase PostgreSQL / Auth / Storage
+```
 
-- PostgreSQL 17: banco central `sislac_central` e bancos físicos dos laboratórios;
-- PHP-FPM 8.4: aplicação Laravel;
-- Nginx interno: somente loopback;
-- pgAdmin opcional: perfil `tools`, somente loopback.
+O frontend permanece separado, por exemplo em Vercel.
 
-Cache e sessão usam PostgreSQL. A fila é `sync`; não há worker nem tabelas persistentes de jobs nesta fundação.
+## Servidor recomendado
 
-## 1. Preparar e clonar
+- Ubuntu 24.04 LTS;
+- Nginx;
+- PHP 8.4 FPM com extensões exigidas pelo Composer;
+- Composer 2;
+- Git;
+- certificado TLS válido.
 
-Instale Docker/Nginx/TLS conforme a política da VPS e exponha somente 22, 80 e 443. Com o usuário de deploy:
+Exponha somente as portas necessárias, normalmente 22, 80 e 443. Banco de dados não deve ficar publicado pelo VPS porque ele não roda no servidor da API.
+
+## Instalação
 
 ```bash
 git clone git@github.com:DevCactusTecnologia/sislac-api.git
 cd sislac-api
+composer install --no-dev --optimize-autoloader
 cp .env.example .env
-nano .env
+php artisan key:generate --force
 ```
 
-O repositório é de uso interno e deve estar privado antes do deploy definitivo.
+Configure o `.env` antes de iniciar a aplicação.
 
-## 2. Variáveis essenciais
+Variáveis essenciais:
 
 ```dotenv
 APP_ENV=production
 APP_DEBUG=false
 APP_URL=https://api.sislac.com.br
+
+DB_CONNECTION=pgsql
+DB_HOST=<host PostgreSQL do Supabase>
+DB_PORT=5432
+DB_DATABASE=postgres
+DB_USERNAME=<role dedicada da API>
+DB_PASSWORD=<segredo fora do Git>
+DB_SSLMODE=require
+
+SUPABASE_URL=<url do projeto>
+SUPABASE_PUBLISHABLE_KEY=<publishable key>
+
+CACHE_STORE=file
+SESSION_DRIVER=file
+QUEUE_CONNECTION=sync
+
 FRONTEND_URL=https://sislac.com.br
 CORS_ALLOWED_ORIGINS=https://sislac.com.br,https://www.sislac.com.br
-
-DB_CONNECTION=central
-DB_HOST=127.0.0.1
-DB_PORT=5432
-DB_DATABASE=sislac_central
-DB_USERNAME=sislac_app
-DB_PASSWORD=<senha-forte>
-DB_ROOT_USER=postgres
-DB_ROOT_PASSWORD=<senha-administrativa>
-
-TENANT_DB_HOST=127.0.0.1
-TENANT_DB_PORT=5432
-TENANT_DB_USERNAME=sislac_app
-TENANT_DB_PASSWORD=<senha-do-app>
-
-# Autenticação clínica transitória
-SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_PUBLISHABLE_KEY=<publishable-key>
-
-# Concordância/migração read-only
-SUPABASE_DB_HOST=<host-suportado-pelo-ambiente>
-SUPABASE_DB_PORT=5432
-SUPABASE_DB_DATABASE=postgres
-SUPABASE_DB_USERNAME=supabase_read_only_user
-SUPABASE_DB_PASSWORD=<senha-da-role-read-only>
-SUPABASE_DB_SSLMODE=require
-
-CACHE_STORE=database
-SESSION_DRIVER=database
-SESSION_ENCRYPT=true
-SESSION_SECURE_COOKIE=true
-SESSION_HTTP_ONLY=true
-SESSION_SAME_SITE=lax
-QUEUE_CONNECTION=sync
 ```
 
-Não use `service_role`/secret key para validar o Bearer clínico. A publishable key identifica o projeto; o access token do usuário é validado server-side pelo Supabase Auth.
+A role PostgreSQL da API deve ser dedicada ao backend, sem `BYPASSRLS`, sem superuser e sem privilégios de administração do cluster.
 
-Para `supabase_source`, use somente credencial PostgreSQL read-only. O projeto atual já possui `supabase_read_only_user`; antes de produção, confirme novamente que ela mantém `default_transaction_read_only=on` e ausência de privilégios de escrita.
+## Laravel
 
-## 3. Primeira subida
+Depois da configuração:
 
 ```bash
-docker compose build
-docker compose up -d postgres
-docker compose run --rm app composer install --no-dev --optimize-autoloader
-docker compose run --rm app php artisan key:generate --force
-docker compose run --rm app php artisan migrate --database=central --force
+php artisan optimize:clear
+php artisan optimize
 ```
 
-Crie/promova o primeiro Super Admin de forma explícita:
+Não execute migrations Laravel contra produção como procedimento padrão desta arquitetura. O schema de produção pertence ao projeto Supabase e mudanças de banco devem seguir o fluxo versionado e revisado do próprio projeto de dados.
+
+## Nginx
+
+O document root deve apontar para `public/`. Use PHP-FPM 8.4, limite de upload coerente com a aplicação e encaminhe os headers padrão de proxy/HTTPS. Habilite TLS moderno e redirecione HTTP para HTTPS.
+
+O endpoint para prova básica de disponibilidade é:
 
 ```bash
-docker compose run --rm app php artisan admin:super-user SEU_EMAIL
-```
-
-Depois:
-
-```bash
-docker compose run --rm app php artisan optimize
-docker compose up -d app nginx
-```
-
-## 4. Validação antes de corte
-
-A integridade offline já pertence ao CI. A prova live deve ser executada apenas no ambiente confiável configurado com a credencial read-only:
-
-```bash
-docker compose run --rm app php artisan contract:supabase-live
-```
-
-Para auditar banco central criado por versões anteriores, sem remover nada:
-
-```bash
-docker compose run --rm app php artisan platform:audit-unused-tables
-```
-
-Se `plans` ou `subscriptions` aparecerem, revise dados/dependências antes de qualquer cleanup físico. O comando não executa `DROP`.
-
-## 5. Nginx/TLS
-
-A borda pública deve sobrescrever headers de proxy recebidos do cliente. Exemplo mínimo:
-
-```nginx
-location / {
-    proxy_pass http://127.0.0.1:8080;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Forwarded-Proto https;
-    proxy_set_header X-Forwarded-Host $host;
-    proxy_set_header X-Forwarded-Port 443;
-}
-```
-
-TLS 1.2+ e HSTS devem ser configurados no Nginx público.
-
-## 6. Atualizações
-
-```bash
-cd /home/sislac/sislac-api
-git pull --ff-only
-docker compose build app
-docker compose run --rm app composer install --no-dev --optimize-autoloader
-docker compose run --rm app php artisan migrate --database=central --force
-docker compose run --rm app php artisan optimize
-docker compose up -d app nginx
-```
-
-Migrations tenant são aplicadas pelo fluxo explicitamente validado para os bancos dos laboratórios. Não execute SQL manual em lote.
-
-## 7. Verificação pós-deploy
-
-```bash
-docker compose ps
 curl --fail --silent --show-error https://api.sislac.com.br/api/health
 ```
 
-Confirme também:
+## Atualização
 
-- portas PostgreSQL/pgAdmin/Nginx interno não estão públicas;
-- `/admin/login` funciona via HTTPS;
-- Super Admin abre a listagem de laboratórios;
-- endpoint clínico sem Bearer retorna 401;
-- endpoint clínico com token Supabase válido e usuário central correlacionado chega à autorização tenant;
-- `contract:supabase-live` retorna Pacientes conforme usando a credencial read-only;
-- um provisionamento de homologação cria o banco físico e termina ativo;
-- restauração de backup foi ensaiada em ambiente separado.
+```bash
+git pull --ff-only
+composer install --no-dev --optimize-autoloader
+php artisan optimize:clear
+php artisan optimize
+sudo systemctl reload php8.4-fpm
+sudo systemctl reload nginx
+```
+
+Antes de atualizar produção, o SHA deve ter CI verde.
+
+## Validação pós-deploy
+
+Verifique:
+
+1. `GET /api/health` responde com sucesso;
+2. rota protegida sem Bearer retorna não autorizado;
+3. Bearer válido é reconhecido;
+4. usuário sem permissão recebe bloqueio de autorização;
+5. uma operação homologada lê/escreve no Supabase esperado;
+6. erros de aplicação não deixam transações abertas;
+7. logs não contêm tokens ou credenciais.
+
+## Segredos
+
+Nunca versione `.env`, senha PostgreSQL, token de usuário, chave administrativa ou credencial SSH. Use secrets do provedor/servidor com permissões mínimas.
+
+## Rollback
+
+Aplicação:
+
+```bash
+git checkout <sha-anterior-aprovado>
+composer install --no-dev --optimize-autoloader
+php artisan optimize:clear
+php artisan optimize
+sudo systemctl reload php8.4-fpm
+```
+
+Mudanças de schema/dados exigem plano de rollback próprio e nunca devem ser revertidas cegamente junto com o código.
