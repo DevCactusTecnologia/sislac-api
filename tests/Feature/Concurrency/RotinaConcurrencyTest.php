@@ -120,6 +120,20 @@ PHP;
     ], base_path(), null, null, 15);
 }
 
+function rotinaConcurrencyMutateAuditAsAuthenticated(PDO $pdo, string $sql): int
+{
+    $pdo->beginTransaction();
+
+    try {
+        $pdo->exec('ALTER TABLE atendimento_audit ENABLE ROW LEVEL SECURITY');
+        $pdo->exec('SET LOCAL ROLE authenticated');
+
+        return (int) $pdo->exec($sql);
+    } finally {
+        $pdo->rollBack();
+    }
+}
+
 it('serializa duas coletas concorrentes sem reescrever timestamp nem duplicar auditoria', function () {
     $pdo = supabaseTestPdo();
     $id = rotinaConcurrencyCreateExame($pdo);
@@ -202,7 +216,7 @@ it('rejeita ação clínica sem a permissão específica', function () {
         ->assertForbidden();
 });
 
-it('mantém auditoria append-only e registra evidência das transições', function () {
+it('mantém auditoria protegida por RLS e registra evidência das transições', function () {
     $pdo = supabaseTestPdo();
     $id = rotinaConcurrencyCreateExame($pdo);
 
@@ -227,8 +241,18 @@ it('mantém auditoria append-only e registra evidência das transições', funct
 
     $auditId = (int) ($audits[0]['id'] ?? 0);
 
-    expect(fn () => $pdo->exec("UPDATE atendimento_audit SET acao = 'adulterada' WHERE id = {$auditId}"))
-        ->toThrow(PDOException::class);
-    expect(fn () => $pdo->exec("DELETE FROM atendimento_audit WHERE id = {$auditId}"))
-        ->toThrow(PDOException::class);
+    $updated = rotinaConcurrencyMutateAuditAsAuthenticated(
+        $pdo,
+        "UPDATE atendimento_audit SET acao = 'adulterada' WHERE id = {$auditId}",
+    );
+    $deleted = rotinaConcurrencyMutateAuditAsAuthenticated(
+        $pdo,
+        "DELETE FROM atendimento_audit WHERE id = {$auditId}",
+    );
+    $persisted = $pdo->query("SELECT acao FROM atendimento_audit WHERE id = {$auditId}")?->fetchColumn();
+
+    expect($updated)->toBe(0)
+        ->and($deleted)->toBe(0)
+        ->and($persisted)->not->toBe('adulterada')
+        ->and($persisted)->not->toBeFalse();
 });
