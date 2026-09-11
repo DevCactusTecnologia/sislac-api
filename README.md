@@ -97,7 +97,7 @@ app/
 
 routes/          # API e health check
 tests/           # testes e fixture PostgreSQL
-docs/            # arquitetura, segurança e contratos
+docs/            # arquitetura, segurança e documentação de domínio
 scripts/         # guards determinísticos do CI
 ```
 
@@ -108,7 +108,7 @@ Não adicionar infraestrutura, cache distribuído, filas, workers ou abstraçõe
 - `docs/ARCHITECTURE.md` — arquitetura e limites;
 - `docs/SEGURANCA.md` — autenticação, RLS e credenciais;
 - `docs/DEPLOY.md` — deploy da API;
-- `docs/contracts/` — contratos versionados dos módulos migrados.
+- `docs/contracts/` — registros documentais de decisões financeiras implementadas; não substituem o Supabase como fonte de verdade.
 
 ## Licença
 
