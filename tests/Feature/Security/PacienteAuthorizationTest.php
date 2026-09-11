@@ -1,43 +1,11 @@
 <?php
 
 use App\Platform\Supabase\SupabasePermissionAuthorizer;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 
-uses(RefreshDatabase::class);
-
 beforeEach(function () {
-    if (DB::connection()->getDriverName() !== 'pgsql') {
-        $this->markTestSkipped('Autorização canônica requer PostgreSQL.');
-    }
-
-    Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-
-    DB::unprepared(<<<'SQL'
-        CREATE OR REPLACE FUNCTION public.has_permission(_user_id uuid, _permission text)
-        RETURNS boolean
-        LANGUAGE sql
-        STABLE
-        AS $$
-            SELECT _user_id = '11111111-1111-4111-8111-111111111111'::uuid
-               AND _permission = 'visualizar_pacientes'
-        $$
-    SQL);
-
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => '11111111-1111-4111-8111-111111111111',
-            'email' => 'analista@example.test',
-            'user_metadata' => [
-                'role' => 'admin',
-                'permissions' => ['editar_paciente'],
-            ],
-        ], 200),
-    ]);
+    resetSupabaseFixture();
+    configureSupabaseTestUser($this, ['visualizar_pacientes']);
 
     Route::middleware(['supabase.auth', 'permission:visualizar_pacientes'])
         ->get('/_test/supabase-permission-allowed', fn () => response()->json(['ok' => true]));
@@ -64,15 +32,13 @@ it('consulta a função canônica has_permission com UUID e permissão explícit
 });
 
 it('permite somente quando has_permission retorna verdadeiro', function () {
-    $this->withToken('valid-token')
-        ->getJson('/_test/supabase-permission-allowed')
+    $this->getJson('/_test/supabase-permission-allowed')
         ->assertOk()
         ->assertJson(['ok' => true]);
 });
 
-it('nega permissão ausente mesmo quando user_metadata tenta concedê-la', function () {
-    $this->withToken('valid-token')
-        ->getJson('/_test/supabase-permission-denied')
+it('nega permissão ausente sem confiar em metadados editáveis do token', function () {
+    $this->getJson('/_test/supabase-permission-denied')
         ->assertForbidden()
         ->assertJson(['message' => 'Acesso não autorizado.']);
 
