@@ -6,8 +6,12 @@ use Tests\TestCase;
 
 class RootRouteTest extends TestCase
 {
-    public function test_a_raiz_redireciona_para_o_super_admin(): void
+    public function test_a_raiz_identifica_a_api_sem_redirecionar_para_admin(): void
     {
-        $this->get('/')->assertRedirect('/admin');
+        $this->get('/')
+            ->assertOk()
+            ->assertJson([
+                'service' => 'SISLAC API',
+            ]);
     }
 }

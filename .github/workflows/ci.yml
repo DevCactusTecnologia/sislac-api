@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, fase-*]
+    branches: [main, fase-*, refactor/supabase-backend-simplification]
   pull_request:
     branches: [main]
 
