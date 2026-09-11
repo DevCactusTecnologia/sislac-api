@@ -1,76 +1,66 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
 fail() {
   echo "::error::$1"
   exit 1
 }
 
-[ -d database/migrations/tenant ] || fail "database/migrations/tenant ausente: database-per-lab é obrigatório."
-
-grep -q 'stancl/tenancy' composer.json || fail "stancl/tenancy ausente do contrato database-per-lab."
-grep -q 'DatabaseTenancyBootstrapper::class' config/tenancy.php || fail "DatabaseTenancyBootstrapper ausente."
-
-for forbidden in CacheTenancyBootstrapper FilesystemTenancyBootstrapper QueueTenancyBootstrapper; do
-  if grep -q "$forbidden" config/tenancy.php; then
-    fail "$forbidden não possui consumidor aprovado."
-  fi
-done
-
-[ ! -e docs/superpowers/specs/2026-09-07-supabase-integration-only-remediation-design.md ] || \
-  fail "Spec Supabase-only superseded reapareceu."
-
-if grep -Eq '(^|[[:space:]])(redis|horizon|reverb):' docker-compose.yml; then
-  fail "Infraestrutura sem consumidor runtime reapareceu no compose."
+if ! command -v rg >/dev/null 2>&1; then
+  fail "ripgrep (rg) é necessário para validar o escopo do backend."
 fi
 
-if grep -Eq 'REDIS_|REVERB_|HORIZON_' .env.example; then
+for removed in \
+  docker-compose.yml \
+  docker \
+  config/tenancy.php \
+  config/provisioning.php \
+  config/sanctum.php \
+  app/Platform/Provisioning \
+  app/Platform/Tenancy \
+  resources/views/admin \
+  database/migrations/central \
+  database/migrations/tenant; do
+  [ ! -e "$removed" ] || fail "Infraestrutura removida reapareceu: $removed"
+done
+
+if rg -n \
+  --glob '!docs/superpowers/**' \
+  --glob '!scripts/check-backend-scope.sh' \
+  -e 'stancl/tenancy' \
+  -e 'TenantProvisioner' \
+  -e 'PostgresDatabaseAdmin' \
+  -e 'sislac_central' \
+  -e 'DB_ROOT_' \
+  -e 'TENANT_DB_' \
+  -e 'X-Tenant' \
+  -e "DB::connection\\(['\"]central['\"]\\)" \
+  -e "DB::connection\\(['\"]tenant['\"]\\)" \
+  -e 'tenant_template' \
+  -e 'supabase_source' \
+  app bootstrap config routes database resources scripts tests README.md docs/ARCHITECTURE.md docs/DEPLOY.md docs/SEGURANCA.md .env.example composer.json .github/workflows/ci.yml 2>/dev/null; then
+  fail "Resíduo funcional da arquitetura central/database-per-lab encontrado."
+fi
+
+if rg -n 'REDIS_|REVERB_|HORIZON_' .env.example; then
   fail "Variáveis de infraestrutura sem consumidor encontradas no .env.example."
 fi
 
-if [ -e database/migrations/0001_01_01_000002_create_jobs_table.php ]; then
-  fail "Migration de fila persistente reapareceu sem consumidor runtime."
+if rg -n "'redis'\s*=>\s*\[" config/cache.php config/queue.php 2>/dev/null; then
+  fail "Redis configurado sem consumidor runtime."
 fi
 
 grep -q '^QUEUE_CONNECTION=sync$' .env.example || \
   fail "QUEUE_CONNECTION deve permanecer sync enquanto não houver consumidor runtime."
 
-for orphan in \
-  TENANT_DB_NAME_PREFIX \
-  WHATSAPP_META_ \
-  PDF_SHARE_SECRET \
-  INTERNAL_WEBHOOK_SECRET \
-  AWS_ACCESS_KEY_ID \
-  AWS_SECRET_ACCESS_KEY \
-  AWS_BUCKET \
-  AWS_ENDPOINT \
-  AWS_USE_PATH_STYLE_ENDPOINT; do
-  if grep -q "$orphan" .env.example; then
-    fail "$orphan não possui consumidor aprovado na fundação."
-  fi
-done
-
-if grep -q "'s3' => \[" config/filesystems.php; then
-  fail "Disco S3 configurado sem consumidor runtime."
-fi
-
-if grep -q "'ses' => \[" config/services.php; then
-  fail "Configuração SES sem consumidor runtime."
-fi
-
-if grep -Eq 'Redis|Horizon|Reverb|PDF_SHARE_SECRET|INTERNAL_WEBHOOK_SECRET' docs/DEPLOY.md; then
-  fail "Documentação de deploy contém infraestrutura ou segredos fora da fundação atual."
-fi
-
-if grep -q 'pecl install redis' docker/php/Dockerfile; then
-  fail "Extensão de infraestrutura instalada sem consumidor runtime."
-fi
-
-if grep -Eq 'Inspiring|Artisan::command\(.inspire' routes/console.php; then
+if rg -n 'Inspiring|Artisan::command\(.inspire' routes/console.php; then
   fail "Comando de exemplo do Laravel reapareceu."
 fi
 
-for scaffold in tests/Unit/ExampleTest.php database/migrations/tenant/.gitkeep public/favicon.ico; do
+for scaffold in tests/Unit/ExampleTest.php public/favicon.ico; do
   [ ! -e "$scaffold" ] || fail "Arquivo de scaffold sem função reapareceu: $scaffold"
 done
 
@@ -78,13 +68,8 @@ for frontend_orphan in package.json .npmrc vite.config.js resources/css/app.css 
   [ ! -e "$frontend_orphan" ] || fail "Pipeline frontend sem consumidor reapareceu: $frontend_orphan"
 done
 
-if grep -Eq 'npm install|npm run build' composer.json; then
+if rg -n 'npm install|npm run build' composer.json; then
   fail "Composer voltou a depender de pipeline frontend inexistente."
 fi
 
-if grep -R -nE "DB::connection\(['\"]supabase_source['\"]\)" app --include='*.php' \
-  | grep -v '^app/Platform/Supabase/SupabaseSource.php:'; then
-  fail "supabase_source só pode ser aberto por App\\Platform\\Supabase\\SupabaseSource."
-fi
-
-echo "OK — escopo Laravel database-per-lab permanece enxuto e coerente."
+echo "OK — backend Laravel permanece enxuto sobre um único Supabase."
