@@ -17,6 +17,21 @@ function createInvariantAtendimento(array $overrides = []): int
     ], $overrides));
 }
 
+function mutateAtendimentoAuditAsAuthenticated(callable $operation): int
+{
+    $connection = DB::connection();
+    $connection->beginTransaction();
+
+    try {
+        $connection->statement('ALTER TABLE atendimento_audit ENABLE ROW LEVEL SECURITY');
+        $connection->statement('SET LOCAL ROLE authenticated');
+
+        return (int) $operation();
+    } finally {
+        $connection->rollBack();
+    }
+}
+
 it('gera protocolo de sete dígitos no banco mesmo quando o cliente não envia protocolo', function () {
     $id = (int) DB::table('atendimentos')->insertGetId([
         'paciente_nome' => 'Paciente Sem Protocolo',
@@ -164,22 +179,31 @@ it('registra auditoria de criação do atendimento', function () {
         ->and($audit?->new_value)->not->toBeNull();
 });
 
-it('impede atualização de registros de auditoria', function () {
+it('RLS impede atualização de registros de auditoria pelo papel authenticated', function () {
     $id = createInvariantAtendimento();
     $auditId = DB::table('atendimento_audit')->where('atendimento_id', $id)->value('id');
+    $originalAction = DB::table('atendimento_audit')->where('id', $auditId)->value('acao');
 
     expect($auditId)->not->toBeNull();
 
-    expect(fn () => DB::table('atendimento_audit')->where('id', $auditId)->update(['acao' => 'adulterada']))
-        ->toThrow(QueryException::class);
+    $affected = mutateAtendimentoAuditAsAuthenticated(
+        fn () => DB::table('atendimento_audit')->where('id', $auditId)->update(['acao' => 'adulterada']),
+    );
+
+    expect($affected)->toBe(0)
+        ->and(DB::table('atendimento_audit')->where('id', $auditId)->value('acao'))->toBe($originalAction);
 });
 
-it('impede exclusão de registros de auditoria', function () {
+it('RLS impede exclusão de registros de auditoria pelo papel authenticated', function () {
     $id = createInvariantAtendimento();
     $auditId = DB::table('atendimento_audit')->where('atendimento_id', $id)->value('id');
 
     expect($auditId)->not->toBeNull();
 
-    expect(fn () => DB::table('atendimento_audit')->where('id', $auditId)->delete())
-        ->toThrow(QueryException::class);
+    $affected = mutateAtendimentoAuditAsAuthenticated(
+        fn () => DB::table('atendimento_audit')->where('id', $auditId)->delete(),
+    );
+
+    expect($affected)->toBe(0)
+        ->and(DB::table('atendimento_audit')->where('id', $auditId)->exists())->toBeTrue();
 });
