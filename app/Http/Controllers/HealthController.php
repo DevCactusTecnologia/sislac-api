@@ -9,9 +9,9 @@ use Throwable;
 /**
  * Verificação de saúde da API (GET /api/health).
  *
- * Responde 200 quando a aplicação sobe e o banco central atende; 503 quando o
- * banco não responde. Não expõe versões nem detalhes internos — é o endpoint
- * que o balanceador, o monitor e o smoke test do deploy consultam.
+ * Responde 200 quando a aplicação sobe e a conexão PostgreSQL padrão do
+ * Supabase atende; 503 quando o banco não responde. Não expõe versões nem
+ * detalhes internos — é o endpoint consultado pelo monitor e pelo smoke test.
  */
 class HealthController extends Controller
 {
