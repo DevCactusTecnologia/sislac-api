@@ -21,30 +21,43 @@ beforeEach(function () {
 
                 EXECUTE format('GRANT authenticated TO %I', current_user);
             END
-            $$
+            $$;
+
+            CREATE SCHEMA IF NOT EXISTS auth;
+
+            CREATE OR REPLACE FUNCTION auth.uid()
+            RETURNS uuid
+            LANGUAGE sql
+            STABLE
+            AS $$
+                SELECT COALESCE(
+                    NULLIF(current_setting('request.jwt.claim.sub', true), ''),
+                    (NULLIF(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')
+                )::uuid
+            $$;
+
+            CREATE OR REPLACE FUNCTION auth.role()
+            RETURNS text
+            LANGUAGE sql
+            STABLE
+            AS $$
+                SELECT COALESCE(
+                    NULLIF(current_setting('request.jwt.claim.role', true), ''),
+                    (NULLIF(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role')
+                )::text
+            $$;
+
+            GRANT USAGE ON SCHEMA auth TO authenticated;
+            GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated;
+            GRANT EXECUTE ON FUNCTION auth.role() TO authenticated;
+
+            DROP TABLE IF EXISTS supabase_context_probe;
+            CREATE TABLE supabase_context_probe (marker text PRIMARY KEY);
+            GRANT SELECT, INSERT ON supabase_context_probe TO authenticated;
         SQL);
     } finally {
         DB::selectOne('select pg_advisory_unlock(91120260911)');
     }
-
-    DB::unprepared(<<<'SQL'
-        CREATE SCHEMA IF NOT EXISTS auth;
-
-        CREATE OR REPLACE FUNCTION auth.uid()
-        RETURNS uuid
-        LANGUAGE sql
-        STABLE
-        AS $$
-            SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
-        $$;
-
-        GRANT USAGE ON SCHEMA auth TO authenticated;
-        GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated;
-
-        DROP TABLE IF EXISTS supabase_context_probe;
-        CREATE TABLE supabase_context_probe (marker text PRIMARY KEY);
-        GRANT SELECT, INSERT ON supabase_context_probe TO authenticated;
-    SQL);
 
     Http::preventStrayRequests();
     config()->set('services.supabase.url', 'https://example.supabase.co');
@@ -60,9 +73,9 @@ beforeEach(function () {
     Route::middleware(['supabase.auth', 'supabase.db'])
         ->get('/_test/supabase-db-context', function () {
             $row = DB::selectOne(<<<'SQL'
-                select current_user as db_user,
-                       auth.uid()::text as uid,
-                       current_setting('request.jwt.claim.role', true) as jwt_role
+                SELECT current_user AS db_user,
+                       auth.uid()::text AS uid,
+                       auth.role() AS jwt_role
             SQL);
 
             return response()->json([
@@ -88,8 +101,9 @@ afterEach(function () {
 
 it('aplica role e claims somente durante a transação autenticada', function () {
     $outsideBefore = DB::selectOne(<<<'SQL'
-        select current_user as db_user,
-               current_setting('request.jwt.claim.sub', true) as sub
+        SELECT current_user AS db_user,
+               auth.uid()::text AS uid,
+               auth.role() AS jwt_role
     SQL);
 
     $this->withToken('valid-token')
@@ -102,13 +116,17 @@ it('aplica role e claims somente durante a transação autenticada', function ()
         ]);
 
     $outsideAfter = DB::selectOne(<<<'SQL'
-        select current_user as db_user,
-               current_setting('request.jwt.claim.sub', true) as sub
+        SELECT current_user AS db_user,
+               auth.uid()::text AS uid,
+               auth.role() AS jwt_role
     SQL);
 
     expect($outsideBefore?->db_user)->not->toBe('authenticated')
+        ->and($outsideBefore?->uid)->toBeNull()
+        ->and($outsideBefore?->jwt_role)->toBeNull()
         ->and($outsideAfter?->db_user)->toBe($outsideBefore?->db_user)
-        ->and($outsideAfter?->sub)->toBeIn([null, '']);
+        ->and($outsideAfter?->uid)->toBeNull()
+        ->and($outsideAfter?->jwt_role)->toBeNull();
 });
 
 it('faz rollback quando a resposta HTTP representa falha', function () {
