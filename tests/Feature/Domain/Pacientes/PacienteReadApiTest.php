@@ -1,93 +1,13 @@
 <?php
 
-use App\Platform\Models\Tenant;
-use App\Platform\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
-
-uses(RefreshDatabase::class);
-
 beforeEach(function () {
-    $this->readDatabase = 'sislac_t_read_'.Str::lower(Str::random(10));
-    pacienteReadControlConnection()->exec('CREATE DATABASE "'.$this->readDatabase.'"');
-
-    $tenantId = (string) Str::uuid();
-    $now = now();
-
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
-        'name' => 'Laboratório Leitura',
-        'code' => 'read-'.Str::lower(Str::random(8)),
-        'status' => 'active',
-        'database_name' => $this->readDatabase,
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    $this->readTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->readTenant);
-
-    Artisan::call('migrate', [
-        '--path' => database_path('migrations/tenant'),
-        '--realpath' => true,
-        '--force' => true,
-    ]);
-
-    tenancy()->end();
-
-    $this->readUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
-        'user_id' => $this->readUser->getKey(),
-        'tenant_id' => $tenantId,
-        'role' => 'recepcionista',
-        'status' => 'active',
-        'permissions_extra' => '[]',
-        'permissions_revoked' => '[]',
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->readUser->getKey(),
-            'email' => $this->readUser->email,
-        ], 200),
-    ]);
-
-    $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('pacientes-read-test-token');
+    resetSupabaseFixture();
+    configureSupabaseTestUser($this, ['visualizar_pacientes']);
 });
 
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    pacienteReadControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->readDatabase.'" WITH (FORCE)');
-});
-
-function pacienteReadControlConnection(?string $database = null): PDO
+function seedPacienteReadRows(int $count): void
 {
-    $config = config('database.connections.central');
-    $database ??= 'postgres';
-
-    return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
-}
-
-function seedPacienteReadRows(string $database, int $count): void
-{
-    $pdo = pacienteReadControlConnection($database);
+    $pdo = supabaseTestPdo();
     $statement = $pdo->prepare(<<<'SQL'
         INSERT INTO pacientes (nome, cpf, status, friendly_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)
@@ -107,7 +27,7 @@ function seedPacienteReadRows(string $database, int $count): void
 }
 
 it('pagina por cursor em blocos de 50 sem repetir registros', function () {
-    seedPacienteReadRows($this->readDatabase, 55);
+    seedPacienteReadRows(55);
 
     $first = $this->getJson('/api/pacientes')
         ->assertOk()
@@ -137,8 +57,8 @@ it('rejeita cursor estruturalmente inválido com 422', function () {
 });
 
 it('prova que o planner pode usar o índice composto da paginação por cursor', function () {
-    seedPacienteReadRows($this->readDatabase, 200);
-    $pdo = pacienteReadControlConnection($this->readDatabase);
+    seedPacienteReadRows(200);
+    $pdo = supabaseTestPdo();
 
     $pdo->exec('SET enable_seqscan = off');
 
@@ -159,7 +79,7 @@ it('prova que o planner pode usar o índice composto da paginação por cursor',
 });
 
 it('filtra status sem alterar os contadores globais da busca', function () {
-    $pdo = pacienteReadControlConnection($this->readDatabase);
+    $pdo = supabaseTestPdo();
     $pdo->exec("INSERT INTO pacientes (nome, cpf, status, friendly_id) VALUES ('Maria Ativa', '11111111111', 'Ativo', 'PAC-000101')");
     $pdo->exec("INSERT INTO pacientes (nome, cpf, status, friendly_id) VALUES ('Maria Inativa', '22222222222', 'Inativo', 'PAC-000102')");
     $pdo->exec("INSERT INTO pacientes (nome, cpf, status, friendly_id) VALUES ('João Outro', '33333333333', 'Ativo', 'PAC-000103')");
@@ -174,7 +94,7 @@ it('filtra status sem alterar os contadores globais da busca', function () {
 });
 
 it('usa cpf parcial quando a busca contém pelo menos três dígitos', function () {
-    $pdo = pacienteReadControlConnection($this->readDatabase);
+    $pdo = supabaseTestPdo();
     $pdo->exec("INSERT INTO pacientes (nome, cpf, friendly_id) VALUES ('Alvo CPF', '12345678901', 'PAC-000201')");
     $pdo->exec("INSERT INTO pacientes (nome, cpf, friendly_id) VALUES ('Outro CPF', '98765432100', 'PAC-000202')");
 

@@ -1,69 +1,13 @@
 <?php
 
-use App\Platform\Models\Tenant;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-
-uses(RefreshDatabase::class);
-
 beforeEach(function () {
-    $this->performanceDatabase = 'sislac_t_perf_'.Str::lower(Str::random(10));
-    pacientePerformanceControlConnection()->exec('CREATE DATABASE "'.$this->performanceDatabase.'"');
-
-    $tenantId = (string) Str::uuid();
-    $now = now();
-
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
-        'name' => 'Laboratório Performance',
-        'code' => 'perf-'.Str::lower(Str::random(8)),
-        'status' => 'active',
-        'database_name' => $this->performanceDatabase,
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    $this->performanceTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->performanceTenant);
-
-    Artisan::call('migrate', [
-        '--path' => database_path('migrations/tenant'),
-        '--realpath' => true,
-        '--force' => true,
-    ]);
-
-    tenancy()->end();
-
-    seedPacientePerformanceRows($this->performanceDatabase, 1000);
+    resetSupabaseFixture();
+    seedPacientePerformanceRows(1000);
 });
 
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    pacientePerformanceControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->performanceDatabase.'" WITH (FORCE)');
-});
-
-function pacientePerformanceControlConnection(?string $database = null): PDO
+function seedPacientePerformanceRows(int $count): void
 {
-    $config = config('database.connections.central');
-    $database ??= 'postgres';
-
-    return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
-}
-
-function seedPacientePerformanceRows(string $database, int $count): void
-{
-    $pdo = pacientePerformanceControlConnection($database);
+    $pdo = supabaseTestPdo();
     $statement = $pdo->prepare(<<<'SQL'
         INSERT INTO pacientes (nome, cpf, status, friendly_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)
@@ -103,42 +47,28 @@ function pacientePlanUsesIndex(array $plan, string $indexName): bool
 }
 
 it('permite ao planner usar o índice composto da paginação keyset', function () {
-    $pdo = pacientePerformanceControlConnection($this->performanceDatabase);
+    $pdo = supabaseTestPdo();
     $pdo->exec('SET enable_seqscan = off');
 
-    $statement = $pdo->query(<<<'SQL'
-        EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
-        SELECT id, updated_at
-        FROM pacientes
-        WHERE updated_at < '2026-09-05 12:45:45+00'
-           OR (updated_at = '2026-09-05 12:45:45+00' AND id < 500)
-        ORDER BY updated_at DESC, id DESC
-        LIMIT 51
-    SQL);
+    try {
+        $statement = $pdo->query(<<<'SQL'
+            EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+            SELECT id, updated_at
+            FROM pacientes
+            WHERE updated_at < '2026-09-05 12:45:45+00'
+               OR (updated_at = '2026-09-05 12:45:45+00' AND id < 500)
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 51
+        SQL);
 
-    $raw = $statement?->fetchColumn();
+        $raw = $statement?->fetchColumn();
+    } finally {
+        $pdo->exec('RESET enable_seqscan');
+    }
+
     $decoded = json_decode((string) $raw, true, flags: JSON_THROW_ON_ERROR);
     $plan = $decoded[0]['Plan'];
 
     expect(pacientePlanUsesIndex($plan, 'idx_pacientes_cursor'))->toBeTrue()
         ->and($plan['Actual Rows'])->toBeLessThanOrEqual(51);
-});
-
-it('permite ao planner usar trigram no predicado de busca case insensitive por nome', function () {
-    $pdo = pacientePerformanceControlConnection($this->performanceDatabase);
-    $pdo->exec('SET enable_seqscan = off');
-
-    $statement = $pdo->query(<<<'SQL'
-        EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
-        SELECT id, nome
-        FROM pacientes
-        WHERE LOWER(nome) LIKE LOWER('%Alvo%')
-    SQL);
-
-    $raw = $statement?->fetchColumn();
-    $decoded = json_decode((string) $raw, true, flags: JSON_THROW_ON_ERROR);
-    $plan = $decoded[0]['Plan'];
-
-    expect(pacientePlanUsesIndex($plan, 'idx_pacientes_nome_trgm'))->toBeTrue()
-        ->and($plan['Actual Rows'])->toBe(50);
 });

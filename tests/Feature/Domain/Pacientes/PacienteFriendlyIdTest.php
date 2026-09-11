@@ -2,63 +2,11 @@
 
 use App\Domain\Pacientes\Models\Paciente;
 use App\Domain\Pacientes\Services\PacienteFriendlyId;
-use App\Platform\Models\Tenant;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-
-uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->friendlyDatabase = 'sislac_t_friendly_'.Str::lower(Str::random(10));
-    pacienteFriendlyControlConnection()->exec('CREATE DATABASE "'.$this->friendlyDatabase.'"');
-
-    $tenantId = (string) Str::uuid();
-    $now = now();
-
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
-        'name' => 'Laboratório Friendly ID',
-        'code' => 'friendly-'.Str::lower(Str::random(8)),
-        'status' => 'active',
-        'database_name' => $this->friendlyDatabase,
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    $this->friendlyTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->friendlyTenant);
-
-    Artisan::call('migrate', [
-        '--path' => database_path('migrations/tenant'),
-        '--realpath' => true,
-        '--force' => true,
-    ]);
+    resetSupabaseFixture();
 });
-
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    pacienteFriendlyControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->friendlyDatabase.'" WITH (FORCE)');
-});
-
-function pacienteFriendlyControlConnection(?string $database = null): PDO
-{
-    $config = config('database.connections.central');
-    $database ??= 'postgres';
-
-    return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
-}
 
 it('gera friendly ids sequenciais no formato canônico', function () {
     $generator = app(PacienteFriendlyId::class);
@@ -68,8 +16,8 @@ it('gera friendly ids sequenciais no formato canônico', function () {
 });
 
 it('mantém o contador atômico entre conexões independentes', function () {
-    $pdoA = pacienteFriendlyControlConnection($this->friendlyDatabase);
-    $pdoB = pacienteFriendlyControlConnection($this->friendlyDatabase);
+    $pdoA = newSupabaseTestPdo();
+    $pdoB = newSupabaseTestPdo();
 
     $sql = <<<'SQL'
         INSERT INTO friendly_id_counters (scope, next_value)

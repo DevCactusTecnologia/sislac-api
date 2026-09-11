@@ -1,89 +1,12 @@
 <?php
 
-use App\Platform\Models\Tenant;
-use App\Platform\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
-
-uses(RefreshDatabase::class);
-
 beforeEach(function () {
-    $this->writeDatabase = 'sislac_t_write_'.Str::lower(Str::random(10));
-    pacienteWriteControlConnection()->exec('CREATE DATABASE "'.$this->writeDatabase.'"');
-
-    $tenantId = (string) Str::uuid();
-    $now = now();
-
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
-        'name' => 'Laboratório Escrita',
-        'code' => 'write-'.Str::lower(Str::random(8)),
-        'status' => 'active',
-        'database_name' => $this->writeDatabase,
-        'created_at' => $now,
-        'updated_at' => $now,
+    resetSupabaseFixture();
+    $this->writeUserId = configureSupabaseTestUser($this, [
+        'cadastrar_paciente',
+        'editar_paciente',
     ]);
-
-    $this->writeTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->writeTenant);
-
-    Artisan::call('migrate', [
-        '--path' => database_path('migrations/tenant'),
-        '--realpath' => true,
-        '--force' => true,
-    ]);
-
-    tenancy()->end();
-
-    $this->writeUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
-        'user_id' => $this->writeUser->getKey(),
-        'tenant_id' => $tenantId,
-        'role' => 'recepcionista',
-        'status' => 'active',
-        'permissions_extra' => '[]',
-        'permissions_revoked' => '[]',
-        'created_at' => $now,
-        'updated_at' => $now,
-    ]);
-
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->writeUser->getKey(),
-            'email' => $this->writeUser->email,
-        ], 200),
-    ]);
-
-    $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('pacientes-write-test-token');
 });
-
-afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    DB::purge('tenant');
-    pacienteWriteControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->writeDatabase.'" WITH (FORCE)');
-});
-
-function pacienteWriteControlConnection(?string $database = null): PDO
-{
-    $config = config('database.connections.central');
-    $database ??= 'postgres';
-
-    return new PDO(
-        sprintf('pgsql:host=%s;port=%s;dbname=%s', $config['host'], $config['port'], $database),
-        (string) $config['username'],
-        (string) $config['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
-}
 
 it('cria paciente normalizando cpf data sexo e campos opcionais', function () {
     $response = $this->postJson('/api/pacientes', [
@@ -110,8 +33,9 @@ it('cria paciente normalizando cpf data sexo e campos opcionais', function () {
         ->assertJsonPath('data.guardian_cpf', null)
         ->assertJsonPath('data.friendly_id', 'PAC-000001');
 
-    $pdo = pacienteWriteControlConnection($this->writeDatabase);
-    $row = $pdo->query("SELECT cpf, data_nascimento::text AS data_nascimento, sexo, nome_social, guardian_name, guardian_cpf, friendly_id FROM pacientes WHERE nome = 'Maria da Silva'")?->fetch(PDO::FETCH_ASSOC);
+    $row = supabaseTestPdo()->query(
+        "SELECT cpf, data_nascimento::text AS data_nascimento, sexo, nome_social, guardian_name, guardian_cpf, friendly_id FROM pacientes WHERE nome = 'Maria da Silva'",
+    )?->fetch(PDO::FETCH_ASSOC);
 
     expect($row)->toMatchArray([
         'cpf' => '12345678901',
@@ -192,19 +116,17 @@ it('ignora campos protegidos enviados pelo cliente', function () {
 });
 
 it('aplica permissões distintas para criação e edição', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->writeUser->getKey())
-        ->where('tenant_id', $this->writeTenant->getKey())
-        ->update(['role' => 'analista']);
+    setSupabaseTestPermissions($this->writeUserId, []);
 
     $this->postJson('/api/pacientes', [
         'nome' => 'Sem Permissão',
         'sexo' => 'Masculino',
     ])->assertForbidden();
 
-    $pdo = pacienteWriteControlConnection($this->writeDatabase);
-    $pdo->exec("INSERT INTO pacientes (nome, sexo, friendly_id) VALUES ('Existente', 'M', 'PAC-000100')");
-    $id = (int) $pdo->lastInsertId('pacientes_id_seq');
+    $pdo = supabaseTestPdo();
+    $id = (int) $pdo->query(
+        "INSERT INTO pacientes (nome, sexo, friendly_id) VALUES ('Existente', 'M', 'PAC-000100') RETURNING id",
+    )?->fetchColumn();
 
     $this->patchJson('/api/pacientes/'.$id, ['nome' => 'Não Pode Editar'])
         ->assertForbidden();
