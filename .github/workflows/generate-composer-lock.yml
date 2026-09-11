@@ -18,7 +18,7 @@ jobs:
           tools: composer:v2
           coverage: none
       - name: Gerar lock canônico
-        run: composer update --lock --no-install --no-scripts --no-interaction --no-progress
+        run: composer update --no-install --no-scripts --no-interaction --no-progress
       - name: Exportar composer.lock
         uses: actions/upload-artifact@v4
         with:
