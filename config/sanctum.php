@@ -5,7 +5,7 @@ use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Laravel\Sanctum\Http\Middleware\AuthenticateSession;
 
 return [
-    'routes' => false,
+    'routes' => true,
 
     'stateful' => array_values(array_filter(array_map(
         'trim',
