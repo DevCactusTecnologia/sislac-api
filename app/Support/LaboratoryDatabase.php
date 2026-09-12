@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Laboratory;
 use Illuminate\Database\Connection;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -34,5 +35,11 @@ final class LaboratoryDatabase
         $connection->getPdo();
 
         return $connection;
+    }
+
+    public function disconnect(): void
+    {
+        DB::purge('lab');
+        Config::forget('database.connections.lab');
     }
 }
