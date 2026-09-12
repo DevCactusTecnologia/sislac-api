@@ -1,8 +1,11 @@
 <?php
 
+use App\Http\Middleware\UseLaboratoryDatabase;
 use App\Models\Laboratory;
+use App\Platform\Models\User;
 use App\Support\LaboratoryDatabase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -95,3 +98,62 @@ it('troca a conexão lab sem reutilizar o banco do laboratório anterior', funct
     $database->connect($laboratoryB);
     expect(DB::connection('lab')->table('laboratory_marker')->value('value'))->toBe('LAB_B');
 });
+
+it('resolve o banco exclusivamente pelo usuário autenticado e limpa a conexão ao final', function () {
+    $databaseName = 'sislac_lab_req_'.Str::lower(Str::random(10));
+    $this->laboratoryDatabases = [$databaseName];
+    createLaboratoryDatabase($databaseName, 'LAB_USER');
+
+    $laboratory = Laboratory::query()->create([
+        'name' => 'Laboratório do usuário',
+        'code' => 'lab-user-'.Str::lower(Str::random(8)),
+        'status' => 'active',
+        'database_url' => laboratoryDatabaseUrl($databaseName),
+    ]);
+    $user = User::factory()->create(['laboratory_id' => $laboratory->getKey()]);
+
+    $request = Request::create('/clinico', 'GET', server: ['HTTP_X_TENANT' => (string) Str::uuid()]);
+    $request->setUserResolver(fn () => $user->fresh());
+
+    $response = app(UseLaboratoryDatabase::class)->handle(
+        $request,
+        fn () => response()->json([
+            'marker' => DB::connection('lab')->table('laboratory_marker')->value('value'),
+        ]),
+    );
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getContent())->toContain('LAB_USER')
+        ->and(config('database.connections.lab'))->toBeNull();
+});
+
+it('bloqueia usuário operacional sem laboratório ativo antes do domínio', function (string $status, bool $withLaboratory) {
+    $laboratory = $withLaboratory
+        ? Laboratory::query()->create([
+            'name' => 'Laboratório indisponível',
+            'code' => 'lab-off-'.Str::lower(Str::random(8)),
+            'status' => $status,
+            'database_url' => 'postgresql://invalid.invalid/never-used',
+        ])
+        : null;
+
+    $user = User::factory()->create([
+        'laboratory_id' => $laboratory?->getKey(),
+        'is_super_admin' => ! $withLaboratory,
+    ]);
+    $request = Request::create('/clinico');
+    $request->setUserResolver(fn () => $user->fresh());
+    $called = false;
+
+    $response = app(UseLaboratoryDatabase::class)->handle($request, function () use (&$called) {
+        $called = true;
+
+        return response('não deve executar');
+    });
+
+    expect($response->getStatusCode())->toBe(403)
+        ->and($called)->toBeFalse();
+})->with([
+    'laboratório suspenso' => ['suspended', true],
+    'super admin sem laboratório' => ['active', false],
+]);
