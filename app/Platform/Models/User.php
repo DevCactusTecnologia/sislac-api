@@ -38,6 +38,8 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'is_super_admin' => 'boolean',
             'password' => 'hashed',
+            'permissions_extra' => 'array',
+            'permissions_revoked' => 'array',
         ];
     }
 }
