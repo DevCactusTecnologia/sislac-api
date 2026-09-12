@@ -2,9 +2,9 @@
 
 namespace App\Domain\Financeiro\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Domain\LabModel;
 
-final class CaixaSessao extends Model
+final class CaixaSessao extends LabModel
 {
     protected $table = 'caixa_sessoes';
 
