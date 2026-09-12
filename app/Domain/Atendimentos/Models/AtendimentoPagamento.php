@@ -2,10 +2,10 @@
 
 namespace App\Domain\Atendimentos\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Domain\LabModel;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-final class AtendimentoPagamento extends Model
+final class AtendimentoPagamento extends LabModel
 {
     protected $table = 'atendimento_pagamentos';
 
