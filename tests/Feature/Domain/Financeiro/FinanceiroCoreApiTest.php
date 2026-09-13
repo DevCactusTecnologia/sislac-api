@@ -1,6 +1,6 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -14,11 +14,11 @@ beforeEach(function () {
     $this->financeiroCoreDatabase = 'sislac_t_fin_core_'.Str::lower(Str::random(9));
     financeiroCoreControlConnection()->exec('CREATE DATABASE "'.$this->financeiroCoreDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Financeiro Core',
         'code' => 'fin-core-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -27,8 +27,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->financeiroCoreTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->financeiroCoreTenant);
+    $this->financeiroCoreLaboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($this->financeiroCoreLaboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -36,12 +36,12 @@ beforeEach(function () {
         '--force' => true,
     ]);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 
     $this->financeiroCoreUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
+    assignTestLaboratoryUser([
         'user_id' => $this->financeiroCoreUser->getKey(),
-        'tenant_id' => $tenantId,
+        'tenant_id' => $laboratoryId,
         'role' => 'financeiro',
         'status' => 'active',
         'permissions_extra' => '[]',
@@ -51,25 +51,14 @@ beforeEach(function () {
     ]);
 
     Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->financeiroCoreUser->id,
-            'email' => $this->financeiroCoreUser->email,
-        ], 200),
-    ]);
-
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-financeiro-token');
+    $this->actingAs($this->financeiroCoreUser->fresh(), 'web');
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     financeiroCoreControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->financeiroCoreDatabase.'" WITH (FORCE)');
 });
 
@@ -293,10 +282,11 @@ it('exige motivo e impede segundo estorno do mesmo pagamento', function () {
 });
 
 it('não concede estorno à recepção apenas por possuir registrar_pagamento', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->financeiroCoreUser->getKey())
-        ->where('tenant_id', $this->financeiroCoreTenant->getKey())
+    DB::connection('central')->table('users')
+        ->where('id', $this->financeiroCoreUser->getKey())
+        ->where('laboratory_id', $this->financeiroCoreLaboratory->getKey())
         ->update(['role' => 'recepcionista']);
+    $this->actingAs($this->financeiroCoreUser->fresh(), 'web');
 
     $pdo = financeiroCoreControlConnection($this->financeiroCoreDatabase);
     $atendimento = financeiroCoreCreateAtendimento($pdo, [

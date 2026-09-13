@@ -1,6 +1,6 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -13,11 +13,11 @@ beforeEach(function () {
     $this->pacientesDatabase = 'sislac_t_pacientes_'.Str::lower(Str::random(10));
     pacienteSchemaControlConnection()->exec('CREATE DATABASE "'.$this->pacientesDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Pacientes',
         'code' => 'pacientes-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -26,8 +26,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->pacientesTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->pacientesTenant);
+    $this->pacientesLaboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($this->pacientesLaboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -37,11 +37,9 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     pacienteSchemaControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->pacientesDatabase.'" WITH (FORCE)');
 });
 

@@ -1,9 +1,10 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -15,11 +16,11 @@ beforeEach(function () {
     $this->rotinaConcurrencyDatabase = 'sislac_t_rotconc_'.Str::lower(Str::random(8));
     rotinaConcurrencyControlConnection()->exec('CREATE DATABASE "'.$this->rotinaConcurrencyDatabase.'"');
 
-    $this->rotinaConcurrencyTenantId = (string) Str::uuid();
+    $this->rotinaConcurrencyLaboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $this->rotinaConcurrencyTenantId,
+    createTestLaboratory([
+        'id' => $this->rotinaConcurrencyLaboratoryId,
         'name' => 'Laboratório Concorrência Rotina',
         'code' => 'rotconc-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -28,18 +29,18 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    tenancy()->initialize(Tenant::query()->findOrFail($this->rotinaConcurrencyTenantId));
+    connectTestLaboratory(Laboratory::query()->findOrFail($this->rotinaConcurrencyLaboratoryId));
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
         '--realpath' => true,
         '--force' => true,
     ]);
-    tenancy()->end();
+    disconnectTestLaboratory();
 
     $this->rotinaConcurrencyUser = User::factory()->create(['name' => 'Usuário Concorrência']);
-    DB::connection('central')->table('memberships')->insert([
+    assignTestLaboratoryUser([
         'user_id' => $this->rotinaConcurrencyUser->getKey(),
-        'tenant_id' => $this->rotinaConcurrencyTenantId,
+        'tenant_id' => $this->rotinaConcurrencyLaboratoryId,
         'role' => 'admin',
         'status' => 'active',
         'permissions_extra' => '[]',
@@ -48,34 +49,15 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
     Http::preventStrayRequests();
-
-    $userId = $this->rotinaConcurrencyUser->id;
-    $userEmail = $this->rotinaConcurrencyUser->email;
-
-    Http::fake(function ($request) use ($userId, $userEmail) {
-        if ($request->hasHeader('Authorization', 'Bearer invalid-token')) {
-            return Http::response(['message' => 'invalid'], 401);
-        }
-
-        return Http::response([
-            'id' => $userId,
-            'email' => $userEmail,
-        ], 200);
-    });
-
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withHeader('X-Tenant', $this->rotinaConcurrencyTenantId);
+    $this->actingAs($this->rotinaConcurrencyUser->fresh(), 'web');
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     rotinaConcurrencyControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->rotinaConcurrencyDatabase.'" WITH (FORCE)');
 });
 
@@ -138,13 +120,13 @@ function rotinaConcurrencyTransitionProcess(
 require getcwd().'/vendor/autoload.php';
 $app = require getcwd().'/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-$tenantConnection = config('database.connections.tenant_template');
-$tenantConnection['database'] = $argv[1];
+$laboratoryConnection = config('database.connections.tenant_template');
+$laboratoryConnection['database'] = $argv[1];
 config([
-    'database.default' => 'tenant',
-    'database.connections.tenant' => $tenantConnection,
+    'database.default' => 'lab',
+    'database.connections.lab' => $laboratoryConnection,
 ]);
-Illuminate\Support\Facades\DB::purge('tenant');
+Illuminate\Support\Facades\DB::purge('lab');
 if ((int) $argv[6] > 0) {
     usleep((int) $argv[6]);
 }
@@ -187,13 +169,13 @@ function rotinaConcurrencyConfigProcess(string $database, string $mode, int $del
 require getcwd().'/vendor/autoload.php';
 $app = require getcwd().'/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-$tenantConnection = config('database.connections.tenant_template');
-$tenantConnection['database'] = $argv[1];
+$laboratoryConnection = config('database.connections.tenant_template');
+$laboratoryConnection['database'] = $argv[1];
 config([
-    'database.default' => 'tenant',
-    'database.connections.tenant' => $tenantConnection,
+    'database.default' => 'lab',
+    'database.connections.lab' => $laboratoryConnection,
 ]);
-Illuminate\Support\Facades\DB::purge('tenant');
+Illuminate\Support\Facades\DB::purge('lab');
 if ((int) $argv[3] > 0) {
     usleep((int) $argv[3]);
 }
@@ -300,38 +282,41 @@ it('serializa mudanças concorrentes de modo mantendo estado compatível com o m
     }
 });
 
-it('não aceita sessão Laravel isolada como autenticação clínica da rotina', function () {
-    $this->actingAs($this->rotinaConcurrencyUser, 'web');
+it('aceita sessão Laravel do usuário vinculado como autenticação clínica da rotina', function () {
+    $this->actingAs($this->rotinaConcurrencyUser->fresh(), 'web');
 
-    $this->getJson('/api/rotina/coleta')->assertUnauthorized();
+    $this->getJson('/api/rotina/coleta')->assertOk();
 });
 
 it('rejeita Bearer Supabase inválido', function () {
+    Auth::guard('web')->logout();
+    Auth::forgetGuards();
     $this->withToken('invalid-token')
         ->getJson('/api/rotina/coleta')
         ->assertUnauthorized();
 });
 
-it('rejeita X-Tenant sem membership antes de tocar no banco clínico', function () {
-    $this->withToken('valid-token')
+it('ignora X-Tenant e mantém o laboratório do usuário', function () {
+    $this
         ->withHeader('X-Tenant', (string) Str::uuid())
         ->getJson('/api/rotina/coleta')
-        ->assertForbidden();
+        ->assertOk();
 });
 
 it('rejeita ação clínica sem a permissão específica', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->rotinaConcurrencyUser->getKey())
-        ->where('tenant_id', $this->rotinaConcurrencyTenantId)
+    DB::connection('central')->table('users')
+        ->where('id', $this->rotinaConcurrencyUser->getKey())
+        ->where('laboratory_id', $this->rotinaConcurrencyLaboratoryId)
         ->update([
             'role' => 'financeiro',
             'permissions_extra' => '[]',
         ]);
+    $this->actingAs($this->rotinaConcurrencyUser->fresh(), 'web');
 
     $pdo = rotinaConcurrencyControlConnection($this->rotinaConcurrencyDatabase);
     $id = rotinaConcurrencyCreateExame($pdo);
 
-    $this->withToken('valid-token')
+    $this
         ->postJson('/api/rotina/exames/'.$id.'/transicao', ['acao' => 'coletar'])
         ->assertForbidden();
 });
@@ -340,11 +325,11 @@ it('mantém auditoria append-only e registra evidência das transições', funct
     $pdo = rotinaConcurrencyControlConnection($this->rotinaConcurrencyDatabase);
     $id = rotinaConcurrencyCreateExame($pdo);
 
-    $this->withToken('valid-token')
+    $this
         ->postJson('/api/rotina/exames/'.$id.'/transicao', ['acao' => 'coletar'])
         ->assertOk();
 
-    $this->withToken('valid-token')
+    $this
         ->postJson('/api/rotina/exames/'.$id.'/transicao', ['acao' => 'iniciar_analise'])
         ->assertOk();
 

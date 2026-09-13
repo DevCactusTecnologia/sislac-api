@@ -1,6 +1,6 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -14,11 +14,11 @@ beforeEach(function () {
     $this->database = 'sislac_t_fin_boundary_'.Str::lower(Str::random(8));
     financeiroBoundaryControl()->exec('CREATE DATABASE "'.$this->database.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Fronteira Financeira',
         'code' => 'fin-boundary-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -27,8 +27,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->tenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->tenant);
+    $this->tenant = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($this->tenant);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -36,12 +36,12 @@ beforeEach(function () {
         '--force' => true,
     ]);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 
     $this->user = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
+    assignTestLaboratoryUser([
         'user_id' => $this->user->getKey(),
-        'tenant_id' => $tenantId,
+        'tenant_id' => $laboratoryId,
         'role' => 'recepcionista',
         'status' => 'active',
         'permissions_extra' => '[]',
@@ -51,25 +51,14 @@ beforeEach(function () {
     ]);
 
     Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->user->id,
-            'email' => $this->user->email,
-        ], 200),
-    ]);
-
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-finance-boundary-token');
+    $this->actingAs($this->user->fresh(), 'web');
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     financeiroBoundaryControl()->exec('DROP DATABASE IF EXISTS "'.$this->database.'" WITH (FORCE)');
 });
 

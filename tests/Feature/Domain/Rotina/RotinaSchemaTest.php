@@ -1,7 +1,7 @@
 <?php
 
+use App\Models\Laboratory;
 use App\Platform\Authorization\TenantPermission;
-use App\Platform\Models\Tenant;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -15,11 +15,11 @@ beforeEach(function () {
     $this->rotinaDatabase = 'sislac_t_rotina_'.Str::lower(Str::random(10));
     rotinaSchemaControlConnection()->exec('CREATE DATABASE "'.$this->rotinaDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Rotina',
         'code' => 'rotina-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -28,8 +28,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->rotinaTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->rotinaTenant);
+    $this->rotinaLaboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($this->rotinaLaboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -39,11 +39,9 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     rotinaSchemaControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->rotinaDatabase.'" WITH (FORCE)');
 });
 
@@ -62,14 +60,14 @@ function rotinaSchemaControlConnection(?string $database = null): PDO
 
 function rotinaSetMode(string $mode): void
 {
-    DB::connection('tenant')->table('lab_config')->where('singleton_key', 1)->update([
+    DB::connection('lab')->table('lab_config')->where('singleton_key', 1)->update([
         'rotina_fluxo_modo' => $mode,
     ]);
 }
 
 function rotinaCreateAtendimento(): int
 {
-    return (int) DB::connection('tenant')->table('atendimentos')->insertGetId([
+    return (int) DB::connection('lab')->table('atendimentos')->insertGetId([
         'paciente_nome' => 'Paciente Rotina',
         'paciente_cpf' => '',
     ]);
@@ -78,7 +76,7 @@ function rotinaCreateAtendimento(): int
 /** @param array<string, mixed> $attributes */
 function rotinaCreateExame(int $atendimentoId, array $attributes = []): int
 {
-    return (int) DB::connection('tenant')->table('atendimento_exames')->insertGetId(array_merge([
+    return (int) DB::connection('lab')->table('atendimento_exames')->insertGetId(array_merge([
         'atendimento_id' => $atendimentoId,
         'nome_exame' => 'Hemograma '.Str::lower(Str::random(6)),
         'status' => 'pendente',
@@ -88,19 +86,19 @@ function rotinaCreateExame(int $atendimentoId, array $attributes = []): int
 
 it('cria configuração singleton da rotina com modo completo por padrão', function () {
     expect(Schema::hasTable('lab_config'))->toBeTrue()
-        ->and(DB::connection('tenant')->table('lab_config')->count())->toBe(1)
-        ->and(DB::connection('tenant')->table('lab_config')->value('rotina_fluxo_modo'))->toBe('completo');
+        ->and(DB::connection('lab')->table('lab_config')->count())->toBe(1)
+        ->and(DB::connection('lab')->table('lab_config')->value('rotina_fluxo_modo'))->toBe('completo');
 });
 
 it('impede segundo registro de configuração no mesmo tenant', function () {
-    DB::connection('tenant')->table('lab_config')->insert([
+    DB::connection('lab')->table('lab_config')->insert([
         'singleton_key' => 1,
         'rotina_fluxo_modo' => 'completo',
     ]);
 })->throws(QueryException::class);
 
 it('aceita somente os três modos canônicos da rotina', function () {
-    DB::connection('tenant')->table('lab_config')->where('singleton_key', 1)->update([
+    DB::connection('lab')->table('lab_config')->where('singleton_key', 1)->update([
         'rotina_fluxo_modo' => 'invalido',
     ]);
 })->throws(QueryException::class);
@@ -114,7 +112,7 @@ it('expõe no backend as permissões já existentes do produto', function () {
 it('bloqueia salto direto de pendente para analisado no modo completo', function () {
     $exameId = rotinaCreateExame(rotinaCreateAtendimento());
 
-    DB::connection('tenant')->table('atendimento_exames')->where('id', $exameId)->update([
+    DB::connection('lab')->table('atendimento_exames')->where('id', $exameId)->update([
         'status' => 'analisado',
     ]);
 })->throws(QueryException::class);
@@ -123,12 +121,12 @@ it('permite a sequência operacional completa', function () {
     $exameId = rotinaCreateExame(rotinaCreateAtendimento());
 
     foreach (['coletado', 'em_bancada', 'analisado'] as $status) {
-        DB::connection('tenant')->table('atendimento_exames')->where('id', $exameId)->update([
+        DB::connection('lab')->table('atendimento_exames')->where('id', $exameId)->update([
             'status' => $status,
         ]);
     }
 
-    expect(DB::connection('tenant')->table('atendimento_exames')->where('id', $exameId)->value('status'))
+    expect(DB::connection('lab')->table('atendimento_exames')->where('id', $exameId)->value('status'))
         ->toBe('analisado');
 });
 
@@ -136,11 +134,11 @@ it('encurta coleta para analisado no modo coleta resultado', function () {
     rotinaSetMode('coleta_resultado');
     $exameId = rotinaCreateExame(rotinaCreateAtendimento());
 
-    DB::connection('tenant')->table('atendimento_exames')->where('id', $exameId)->update([
+    DB::connection('lab')->table('atendimento_exames')->where('id', $exameId)->update([
         'status' => 'coletado',
     ]);
 
-    $exame = DB::connection('tenant')->table('atendimento_exames')->where('id', $exameId)->first();
+    $exame = DB::connection('lab')->table('atendimento_exames')->where('id', $exameId)->first();
 
     expect($exame?->status)->toBe('analisado')
         ->and($exame?->data_coleta)->not->toBeNull()
@@ -152,7 +150,7 @@ it('não materializa bancada no modo coleta resultado', function () {
     rotinaSetMode('coleta_resultado');
     $exameId = rotinaCreateExame(rotinaCreateAtendimento());
 
-    DB::connection('tenant')->table('atendimento_exames')->where('id', $exameId)->update([
+    DB::connection('lab')->table('atendimento_exames')->where('id', $exameId)->update([
         'status' => 'em_bancada',
     ]);
 })->throws(QueryException::class);
@@ -161,7 +159,7 @@ it('short circuita novo exame interno no modo apenas resultado', function () {
     rotinaSetMode('apenas_resultado');
     $exameId = rotinaCreateExame(rotinaCreateAtendimento());
 
-    $exame = DB::connection('tenant')->table('atendimento_exames')->where('id', $exameId)->first();
+    $exame = DB::connection('lab')->table('atendimento_exames')->where('id', $exameId)->first();
 
     expect($exame?->status)->toBe('analisado')
         ->and($exame?->data_coleta)->not->toBeNull()
@@ -177,7 +175,7 @@ it('preserva exame terceirizado digitado nos modos encurtados', function () {
         'tipo_processo' => 'TERCEIRIZADO',
     ]);
 
-    $exame = DB::connection('tenant')->table('atendimento_exames')->where('id', $exameId)->first();
+    $exame = DB::connection('lab')->table('atendimento_exames')->where('id', $exameId)->first();
 
     expect($exame?->status)->toBe('digitado')
         ->and($exame?->data_coleta)->toBeNull()
@@ -189,7 +187,7 @@ it('impede regressão de exame finalizado sem retificação futura', function ()
         'status' => 'finalizado',
     ]);
 
-    DB::connection('tenant')->table('atendimento_exames')->where('id', $exameId)->update([
+    DB::connection('lab')->table('atendimento_exames')->where('id', $exameId)->update([
         'status' => 'pendente',
     ]);
 })->throws(QueryException::class);

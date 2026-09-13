@@ -2,9 +2,9 @@
 
 namespace App\Domain\Pacientes\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Domain\LabModel;
 
-final class Paciente extends Model
+final class Paciente extends LabModel
 {
     protected $table = 'pacientes';
 

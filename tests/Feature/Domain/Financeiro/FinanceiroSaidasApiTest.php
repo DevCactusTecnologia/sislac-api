@@ -1,6 +1,6 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -14,11 +14,11 @@ beforeEach(function () {
     $this->saidasApiDatabase = 'sislac_t_saidas_api_'.Str::lower(Str::random(8));
     saidasApiControlConnection()->exec('CREATE DATABASE "'.$this->saidasApiDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório API Saídas',
         'code' => 'saidas-api-'.Str::lower(Str::random(7)),
         'status' => 'active',
@@ -27,8 +27,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->saidasApiTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->saidasApiTenant);
+    $this->saidasApiLaboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($this->saidasApiLaboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -36,12 +36,12 @@ beforeEach(function () {
         '--force' => true,
     ]);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 
     $this->saidasApiUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
+    assignTestLaboratoryUser([
         'user_id' => $this->saidasApiUser->getKey(),
-        'tenant_id' => $tenantId,
+        'tenant_id' => $laboratoryId,
         'role' => 'financeiro',
         'status' => 'active',
         'permissions_extra' => '[]',
@@ -51,25 +51,14 @@ beforeEach(function () {
     ]);
 
     Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->saidasApiUser->id,
-            'email' => $this->saidasApiUser->email,
-        ], 200),
-    ]);
-
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-saidas-token');
+    $this->actingAs($this->saidasApiUser->fresh(), 'web');
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     saidasApiControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->saidasApiDatabase.'" WITH (FORCE)');
 });
 
@@ -232,13 +221,14 @@ it('pagina de modo estável por data e id', function () {
 });
 
 it('separa permissão de leitura da gestão financeira', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->saidasApiUser->getKey())
-        ->where('tenant_id', $this->saidasApiTenant->getKey())
+    DB::connection('central')->table('users')
+        ->where('id', $this->saidasApiUser->getKey())
+        ->where('laboratory_id', $this->saidasApiLaboratory->getKey())
         ->update([
             'role' => 'recepcionista',
             'permissions_extra' => json_encode(['visualizar_financeiro'], JSON_THROW_ON_ERROR),
         ]);
+    $this->actingAs($this->saidasApiUser->fresh(), 'web');
 
     $this->getJson('/api/financeiro/saidas')->assertOk();
 
@@ -388,13 +378,14 @@ it('exige gestão financeira para editar saída', function () {
 
     $id = (int) $saida->json('data.id');
 
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->saidasApiUser->getKey())
-        ->where('tenant_id', $this->saidasApiTenant->getKey())
+    DB::connection('central')->table('users')
+        ->where('id', $this->saidasApiUser->getKey())
+        ->where('laboratory_id', $this->saidasApiLaboratory->getKey())
         ->update([
             'role' => 'recepcionista',
             'permissions_extra' => json_encode(['visualizar_financeiro'], JSON_THROW_ON_ERROR),
         ]);
+    $this->actingAs($this->saidasApiUser->fresh(), 'web');
 
     $this->patchJson('/api/financeiro/saidas/'.$id, [
         'descricao' => 'Sem permissão',

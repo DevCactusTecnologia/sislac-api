@@ -1,6 +1,6 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -13,11 +13,11 @@ beforeEach(function () {
     $this->atendimentoInvariantDatabase = 'sislac_t_atinv_'.Str::lower(Str::random(10));
     atendimentoInvariantControlConnection()->exec('CREATE DATABASE "'.$this->atendimentoInvariantDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Invariantes',
         'code' => 'atinv-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -26,8 +26,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $tenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($tenant);
+    $laboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($laboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -37,11 +37,9 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     atendimentoInvariantControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->atendimentoInvariantDatabase.'" WITH (FORCE)');
 });
 

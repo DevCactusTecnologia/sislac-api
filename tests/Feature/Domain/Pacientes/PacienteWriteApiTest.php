@@ -1,11 +1,10 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -14,11 +13,11 @@ beforeEach(function () {
     $this->writeDatabase = 'sislac_t_write_'.Str::lower(Str::random(10));
     pacienteWriteControlConnection()->exec('CREATE DATABASE "'.$this->writeDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Escrita',
         'code' => 'write-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -27,8 +26,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->writeTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->writeTenant);
+    $this->writeLaboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($this->writeLaboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -36,12 +35,12 @@ beforeEach(function () {
         '--force' => true,
     ]);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 
     $this->writeUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
+    assignTestLaboratoryUser([
         'user_id' => $this->writeUser->getKey(),
-        'tenant_id' => $tenantId,
+        'tenant_id' => $laboratoryId,
         'role' => 'recepcionista',
         'status' => 'active',
         'permissions_extra' => '[]',
@@ -50,25 +49,14 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->writeUser->getKey(),
-            'email' => $this->writeUser->email,
-        ], 200),
-    ]);
-
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('pacientes-write-test-token');
+    $this->actingAs($this->writeUser->fresh(), 'web');
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     pacienteWriteControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->writeDatabase.'" WITH (FORCE)');
 });
 
@@ -192,10 +180,11 @@ it('ignora campos protegidos enviados pelo cliente', function () {
 });
 
 it('aplica permissões distintas para criação e edição', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->writeUser->getKey())
-        ->where('tenant_id', $this->writeTenant->getKey())
+    DB::connection('central')->table('users')
+        ->where('id', $this->writeUser->getKey())
+        ->where('laboratory_id', $this->writeLaboratory->getKey())
         ->update(['role' => 'analista']);
+    $this->actingAs($this->writeUser->fresh(), 'web');
 
     $this->postJson('/api/pacientes', [
         'nome' => 'Sem Permissão',

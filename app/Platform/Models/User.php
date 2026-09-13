@@ -2,12 +2,14 @@
 
 namespace App\Platform\Models;
 
+use App\Models\Laboratory;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -21,6 +23,12 @@ class User extends Authenticatable
 
     protected $connection = 'central';
 
+    /** @return BelongsTo<Laboratory, $this> */
+    public function laboratory(): BelongsTo
+    {
+        return $this->belongsTo(Laboratory::class);
+    }
+
     /**
      * @return array<string, string>
      */
@@ -30,6 +38,8 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'is_super_admin' => 'boolean',
             'password' => 'hashed',
+            'permissions_extra' => 'array',
+            'permissions_revoked' => 'array',
         ];
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Atendimentos\ShowAtendimentoByProtocoloController;
 use App\Http\Controllers\Atendimentos\ShowAtendimentoController;
 use App\Http\Controllers\Atendimentos\StoreAtendimentoController;
 use App\Http\Controllers\Atendimentos\UpdateAtendimentoController;
+use App\Http\Controllers\Auth\CurrentClinicalUserController;
 use App\Http\Controllers\Financeiro\CloseCaixaController;
 use App\Http\Controllers\Financeiro\CreateFinanceiroSaidaController;
 use App\Http\Controllers\Financeiro\ListAReceberPacientesController;
@@ -30,6 +31,9 @@ use App\Http\Controllers\Rotina\UpdateRotinaConfigController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class)->name('api.health');
+Route::get('/user', CurrentClinicalUserController::class)
+    ->middleware('auth:sanctum')
+    ->name('api.user');
 
 Route::middleware(['supabase.auth', 'tenant', 'tenant.permission:visualizar_pacientes'])
     ->prefix('pacientes')

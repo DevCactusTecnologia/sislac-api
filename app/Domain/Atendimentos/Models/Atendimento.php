@@ -2,10 +2,10 @@
 
 namespace App\Domain\Atendimentos\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Domain\LabModel;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-final class Atendimento extends Model
+final class Atendimento extends LabModel
 {
     protected $table = 'atendimentos';
 

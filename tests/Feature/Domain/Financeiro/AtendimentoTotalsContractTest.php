@@ -1,6 +1,6 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -14,11 +14,11 @@ beforeEach(function () {
     $this->totaisDatabase = 'sislac_t_totais_'.Str::lower(Str::random(9));
     totaisControlConnection()->exec('CREATE DATABASE "'.$this->totaisDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Totais Canônicos',
         'code' => 'totais-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -27,8 +27,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->totaisTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->totaisTenant);
+    $this->totaisLaboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($this->totaisLaboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -36,12 +36,12 @@ beforeEach(function () {
         '--force' => true,
     ]);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 
     $this->totaisUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
+    assignTestLaboratoryUser([
         'user_id' => $this->totaisUser->getKey(),
-        'tenant_id' => $tenantId,
+        'tenant_id' => $laboratoryId,
         'role' => 'recepcionista',
         'status' => 'active',
         'permissions_extra' => '[]',
@@ -51,25 +51,14 @@ beforeEach(function () {
     ]);
 
     Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->totaisUser->id,
-            'email' => $this->totaisUser->email,
-        ], 200),
-    ]);
-
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-totais-token');
+    $this->actingAs($this->totaisUser->fresh(), 'web');
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     totaisControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->totaisDatabase.'" WITH (FORCE)');
 });
 
