@@ -4,6 +4,7 @@ use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -288,8 +289,8 @@ it('aceita sessão Laravel do usuário vinculado como autenticação clínica da
 });
 
 it('rejeita Bearer Supabase inválido', function () {
-    Illuminate\Support\Facades\Auth::guard('web')->logout();
-    Illuminate\Support\Facades\Auth::forgetGuards();
+    Auth::guard('web')->logout();
+    Auth::forgetGuards();
     $this->withToken('invalid-token')
         ->getJson('/api/rotina/coleta')
         ->assertUnauthorized();

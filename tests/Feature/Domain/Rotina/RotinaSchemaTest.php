@@ -1,7 +1,7 @@
 <?php
 
-use App\Platform\Authorization\TenantPermission;
 use App\Models\Laboratory;
+use App\Platform\Authorization\TenantPermission;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
