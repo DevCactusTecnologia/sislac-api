@@ -16,7 +16,7 @@ it('protege a identidade da SPA com auth sanctum', function () {
     $user = User::factory()->create();
     Sanctum::actingAs($user);
 
-    $this->getJson('/api/me')
+    $this->getJson('/api/user')
         ->assertOk()
         ->assertJsonPath('id', $user->getKey())
         ->assertJsonPath('email', $user->email);
