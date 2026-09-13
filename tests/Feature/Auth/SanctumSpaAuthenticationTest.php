@@ -3,6 +3,7 @@
 use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -120,7 +121,11 @@ it('logout invalida autenticação e renova a sessão', function () {
 
     $this->postJson('/logout')->assertNoContent();
 
-    $this->assertGuest();
+    $this->assertGuest('web');
     expect(session()->getId())->not->toBe($sessionId)
         ->and(session()->token())->not->toBe($csrfToken);
+
+    // Uma nova requisição não reutiliza a identidade em memória do guard anterior.
+    Auth::forgetGuards();
+    $this->getJson('/api/user')->assertUnauthorized();
 });
