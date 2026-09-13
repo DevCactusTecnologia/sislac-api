@@ -1,6 +1,6 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -14,11 +14,11 @@ beforeEach(function () {
     $this->rotinaTransitionDatabase = 'sislac_t_rottr_'.Str::lower(Str::random(9));
     rotinaTransitionControlConnection()->exec('CREATE DATABASE "'.$this->rotinaTransitionDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Transição Rotina',
         'code' => 'rottr-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -27,8 +27,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $tenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($tenant);
+    $laboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($laboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -36,12 +36,12 @@ beforeEach(function () {
         '--force' => true,
     ]);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 
     $this->rotinaTransitionUser = User::factory()->create(['name' => 'Analista Rotina']);
-    DB::connection('central')->table('memberships')->insert([
+    assignTestLaboratoryUser([
         'user_id' => $this->rotinaTransitionUser->getKey(),
-        'tenant_id' => $tenantId,
+        'tenant_id' => $laboratoryId,
         'role' => 'admin',
         'status' => 'active',
         'permissions_extra' => '[]',
@@ -50,28 +50,17 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->rotinaTransitionTenantId = $tenantId;
+    $this->rotinaTransitionLaboratoryId = $laboratoryId;
 
     Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->rotinaTransitionUser->id,
-            'email' => $this->rotinaTransitionUser->email,
-        ], 200),
-    ]);
-
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-rotina-transition-token');
+    $this->actingAs($this->rotinaTransitionUser->fresh(), 'web');
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     rotinaTransitionControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->rotinaTransitionDatabase.'" WITH (FORCE)');
 });
 
@@ -267,13 +256,14 @@ it('rejeita estado e timestamps enviados diretamente pelo cliente', function () 
 });
 
 it('aplica permissão específica para cada intenção', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->rotinaTransitionUser->getKey())
-        ->where('tenant_id', $this->rotinaTransitionTenantId)
+    DB::connection('central')->table('users')
+        ->where('id', $this->rotinaTransitionUser->getKey())
+        ->where('laboratory_id', $this->rotinaTransitionLaboratoryId)
         ->update([
             'role' => 'financeiro',
             'permissions_extra' => json_encode(['registrar_coleta']),
         ]);
+    $this->actingAs($this->rotinaTransitionUser->fresh(), 'web');
 
     $pdo = rotinaTransitionControlConnection($this->rotinaTransitionDatabase);
     $coletaId = rotinaTransitionCreateExame($pdo);

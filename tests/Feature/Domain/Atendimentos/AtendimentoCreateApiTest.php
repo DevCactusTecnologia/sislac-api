@@ -1,7 +1,7 @@
 <?php
 
 use App\Domain\Atendimentos\Actions\CreateAtendimento;
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -16,11 +16,11 @@ beforeEach(function () {
     $this->atendimentoCreateDatabase = 'sislac_t_atcreate_'.Str::lower(Str::random(9));
     atendimentoCreateControlConnection()->exec('CREATE DATABASE "'.$this->atendimentoCreateDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Criação Atendimentos',
         'code' => 'atcreate-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -29,8 +29,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->atendimentoCreateTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->atendimentoCreateTenant);
+    $this->atendimentoCreateLaboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($this->atendimentoCreateLaboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -38,12 +38,12 @@ beforeEach(function () {
         '--force' => true,
     ]);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 
     $this->atendimentoCreateUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
+    assignTestLaboratoryUser([
         'user_id' => $this->atendimentoCreateUser->getKey(),
-        'tenant_id' => $tenantId,
+        'tenant_id' => $laboratoryId,
         'role' => 'recepcionista',
         'status' => 'active',
         'permissions_extra' => '[]',
@@ -53,25 +53,14 @@ beforeEach(function () {
     ]);
 
     Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->atendimentoCreateUser->id,
-            'email' => $this->atendimentoCreateUser->email,
-        ], 200),
-    ]);
-
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-atendimentos-token');
+    $this->actingAs($this->atendimentoCreateUser->fresh(), 'web');
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     atendimentoCreateControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->atendimentoCreateDatabase.'" WITH (FORCE)');
 });
 
@@ -227,33 +216,35 @@ it('repete a mesma idempotency key retornando o mesmo atendimento sem duplicar f
 });
 
 it('faz rollback integral quando um filho viola uma invariante do banco', function () {
-    tenancy()->initialize($this->atendimentoCreateTenant);
+    connectTestLaboratory($this->atendimentoCreateLaboratory);
     $payload = validAtendimentoCreatePayload();
     $payload['exames'][1]['tipo_processo'] = 'INVALIDO';
 
     expect(fn () => app(CreateAtendimento::class)->handle($payload))
         ->toThrow(QueryException::class);
 
-    expect(DB::connection('tenant')->table('atendimentos')->count())->toBe(0)
-        ->and(DB::connection('tenant')->table('atendimento_exames')->count())->toBe(0)
-        ->and(DB::connection('tenant')->table('atendimento_pagamentos')->count())->toBe(0);
+    expect(DB::connection('lab')->table('atendimentos')->count())->toBe(0)
+        ->and(DB::connection('lab')->table('atendimento_exames')->count())->toBe(0)
+        ->and(DB::connection('lab')->table('atendimento_pagamentos')->count())->toBe(0);
 });
 
 it('não permite que perfil sem criar_atendimento use o endpoint', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->atendimentoCreateUser->getKey())
-        ->where('tenant_id', $this->atendimentoCreateTenant->getKey())
+    DB::connection('central')->table('users')
+        ->where('id', $this->atendimentoCreateUser->getKey())
+        ->where('laboratory_id', $this->atendimentoCreateLaboratory->getKey())
         ->update(['role' => 'analista']);
+    $this->actingAs($this->atendimentoCreateUser->fresh(), 'web');
 
     $this->postJson('/api/atendimentos', validAtendimentoCreatePayload())
         ->assertForbidden();
 });
 
 it('respeita revogação explícita de criar_atendimento mesmo para recepcionista', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->atendimentoCreateUser->getKey())
-        ->where('tenant_id', $this->atendimentoCreateTenant->getKey())
+    DB::connection('central')->table('users')
+        ->where('id', $this->atendimentoCreateUser->getKey())
+        ->where('laboratory_id', $this->atendimentoCreateLaboratory->getKey())
         ->update(['permissions_revoked' => json_encode(['criar_atendimento'], JSON_THROW_ON_ERROR)]);
+    $this->actingAs($this->atendimentoCreateUser->fresh(), 'web');
 
     $this->postJson('/api/atendimentos', validAtendimentoCreatePayload())
         ->assertForbidden();

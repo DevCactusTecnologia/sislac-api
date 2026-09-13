@@ -1,6 +1,6 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -12,11 +12,11 @@ beforeEach(function () {
     $this->financeiroSchemaDatabase = 'sislac_t_fin_schema_'.Str::lower(Str::random(9));
     financeiroSchemaControlConnection()->exec('CREATE DATABASE "'.$this->financeiroSchemaDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Financeiro Schema',
         'code' => 'fin-schema-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -25,8 +25,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->financeiroSchemaTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->financeiroSchemaTenant);
+    $this->financeiroSchemaLaboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($this->financeiroSchemaLaboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -34,15 +34,13 @@ beforeEach(function () {
         '--force' => true,
     ]);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     financeiroSchemaControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->financeiroSchemaDatabase.'" WITH (FORCE)');
 });
 

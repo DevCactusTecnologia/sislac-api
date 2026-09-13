@@ -1,7 +1,7 @@
 <?php
 
 use App\Domain\Atendimentos\Actions\UpdateAtendimento;
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -16,11 +16,11 @@ beforeEach(function () {
     $this->atendimentoUpdateDatabase = 'sislac_t_atupdate_'.Str::lower(Str::random(9));
     atendimentoUpdateControlConnection()->exec('CREATE DATABASE "'.$this->atendimentoUpdateDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Edição Atendimentos',
         'code' => 'atupdate-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -29,8 +29,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->atendimentoUpdateTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->atendimentoUpdateTenant);
+    $this->atendimentoUpdateLaboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($this->atendimentoUpdateLaboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -38,12 +38,12 @@ beforeEach(function () {
         '--force' => true,
     ]);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 
     $this->atendimentoUpdateUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
+    assignTestLaboratoryUser([
         'user_id' => $this->atendimentoUpdateUser->getKey(),
-        'tenant_id' => $tenantId,
+        'tenant_id' => $laboratoryId,
         'role' => 'recepcionista',
         'status' => 'active',
         'permissions_extra' => '[]',
@@ -53,25 +53,14 @@ beforeEach(function () {
     ]);
 
     Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->atendimentoUpdateUser->id,
-            'email' => $this->atendimentoUpdateUser->email,
-        ], 200),
-    ]);
-
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-atendimentos-token');
+    $this->actingAs($this->atendimentoUpdateUser->fresh(), 'web');
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     atendimentoUpdateControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->atendimentoUpdateDatabase.'" WITH (FORCE)');
 });
 
@@ -230,7 +219,7 @@ it('substitui lista de exames atomicamente e faz rollback integral se novo filho
     ]))->assertCreated();
     $id = (int) $created->json('atendimento_id');
 
-    tenancy()->initialize($this->atendimentoUpdateTenant);
+    connectTestLaboratory($this->atendimentoUpdateLaboratory);
 
     expect(fn () => app(UpdateAtendimento::class)->handle($id, [
         'solicitante' => 'Não Deve Persistir',
@@ -240,7 +229,7 @@ it('substitui lista de exames atomicamente e faz rollback integral se novo filho
         ],
     ], null))->toThrow(QueryException::class);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 
     $pdo = atendimentoUpdateControlConnection($this->atendimentoUpdateDatabase);
     expect((string) $pdo->query("SELECT solicitante FROM atendimentos WHERE id = {$id}")?->fetchColumn())->toBe('Solicitante Original')

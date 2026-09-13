@@ -1,11 +1,10 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -14,11 +13,11 @@ beforeEach(function () {
     $this->readDatabase = 'sislac_t_read_'.Str::lower(Str::random(10));
     pacienteReadControlConnection()->exec('CREATE DATABASE "'.$this->readDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Leitura',
         'code' => 'read-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -27,8 +26,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->readTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->readTenant);
+    $this->readLaboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($this->readLaboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -36,12 +35,12 @@ beforeEach(function () {
         '--force' => true,
     ]);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 
     $this->readUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
+    assignTestLaboratoryUser([
         'user_id' => $this->readUser->getKey(),
-        'tenant_id' => $tenantId,
+        'tenant_id' => $laboratoryId,
         'role' => 'recepcionista',
         'status' => 'active',
         'permissions_extra' => '[]',
@@ -50,25 +49,14 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->readUser->getKey(),
-            'email' => $this->readUser->email,
-        ], 200),
-    ]);
-
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('pacientes-read-test-token');
+    $this->actingAs($this->readUser->fresh(), 'web');
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     pacienteReadControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->readDatabase.'" WITH (FORCE)');
 });
 

@@ -1,7 +1,7 @@
 <?php
 
 use App\Domain\Financeiro\Actions\CloseCaixa;
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -13,11 +13,11 @@ beforeEach(function () {
     $this->caixaEstornoDatabase = 'sislac_t_caixa_est_'.Str::lower(Str::random(7));
     caixaEstornoControlConnection()->exec('CREATE DATABASE "'.$this->caixaEstornoDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Caixa Estorno',
         'code' => 'caixa-est-'.Str::lower(Str::random(6)),
         'status' => 'active',
@@ -26,8 +26,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->caixaEstornoTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->caixaEstornoTenant);
+    $this->caixaEstornoLaboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($this->caixaEstornoLaboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -35,15 +35,13 @@ beforeEach(function () {
         '--force' => true,
     ]);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     caixaEstornoControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->caixaEstornoDatabase.'" WITH (FORCE)');
 });
 
@@ -99,9 +97,9 @@ it('exclui do fechamento pagamento com estorno canônico mesmo se a flag legada 
     expect((string) $pdo->query("SELECT status_pagamento FROM atendimento_pagamentos WHERE id = {$paymentId}")?->fetchColumn())
         ->toBe('efetuado');
 
-    tenancy()->initialize($this->caixaEstornoTenant);
+    connectTestLaboratory($this->caixaEstornoLaboratory);
     $result = app(CloseCaixa::class)->handle($sessionId, [], (string) Str::uuid());
-    tenancy()->end();
+    disconnectTestLaboratory();
 
     expect($result['entradas_dinheiro'])->toBe('0.00')
         ->and($result['saldo_final'])->toBe('100.00');

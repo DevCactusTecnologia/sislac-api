@@ -1,6 +1,6 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -19,12 +19,12 @@ beforeEach(function () {
     $control->exec('CREATE DATABASE "'.$this->rotinaQueuesDatabaseB.'"');
 
     $now = now();
-    $this->rotinaQueuesTenantA = (string) Str::uuid();
-    $this->rotinaQueuesTenantB = (string) Str::uuid();
+    $this->rotinaQueuesLaboratoryA = (string) Str::uuid();
+    $this->rotinaQueuesLaboratoryB = (string) Str::uuid();
 
-    DB::connection('central')->table('tenants')->insert([
+    foreach ([
         [
-            'id' => $this->rotinaQueuesTenantA,
+            'id' => $this->rotinaQueuesLaboratoryA,
             'name' => 'Laboratório Fila A',
             'code' => 'rotqa-'.Str::lower(Str::random(8)),
             'status' => 'active',
@@ -33,7 +33,7 @@ beforeEach(function () {
             'updated_at' => $now,
         ],
         [
-            'id' => $this->rotinaQueuesTenantB,
+            'id' => $this->rotinaQueuesLaboratoryB,
             'name' => 'Laboratório Fila B',
             'code' => 'rotqb-'.Str::lower(Str::random(8)),
             'status' => 'active',
@@ -41,64 +41,42 @@ beforeEach(function () {
             'created_at' => $now,
             'updated_at' => $now,
         ],
-    ]);
+    ] as $attributes) {
+        createTestLaboratory($attributes);
+    }
 
-    foreach ([$this->rotinaQueuesTenantA, $this->rotinaQueuesTenantB] as $tenantId) {
-        tenancy()->initialize(Tenant::query()->findOrFail($tenantId));
+    foreach ([$this->rotinaQueuesLaboratoryA, $this->rotinaQueuesLaboratoryB] as $laboratoryId) {
+        connectTestLaboratory(Laboratory::query()->findOrFail($laboratoryId));
         Artisan::call('migrate', [
             '--path' => database_path('migrations/tenant'),
             '--realpath' => true,
             '--force' => true,
         ]);
-        tenancy()->end();
+        disconnectTestLaboratory();
     }
 
     $this->rotinaQueuesUser = User::factory()->create(['name' => 'Usuário Filas']);
 
-    DB::connection('central')->table('memberships')->insert([
-        [
-            'user_id' => $this->rotinaQueuesUser->getKey(),
-            'tenant_id' => $this->rotinaQueuesTenantA,
-            'role' => 'recepcionista',
-            'status' => 'active',
-            'permissions_extra' => '[]',
-            'permissions_revoked' => '[]',
-            'created_at' => $now,
-            'updated_at' => $now,
-        ],
-        [
-            'user_id' => $this->rotinaQueuesUser->getKey(),
-            'tenant_id' => $this->rotinaQueuesTenantB,
-            'role' => 'recepcionista',
-            'status' => 'active',
-            'permissions_extra' => '[]',
-            'permissions_revoked' => '[]',
-            'created_at' => $now,
-            'updated_at' => $now,
-        ],
+    $this->rotinaQueuesUser->forceFill([
+        'laboratory_id' => $this->rotinaQueuesLaboratoryA,
+        'role' => 'recepcionista',
+        'status' => 'active',
+    ])->save();
+    $this->rotinaQueuesUserB = User::factory()->create([
+        'laboratory_id' => $this->rotinaQueuesLaboratoryB,
+        'role' => 'recepcionista',
+        'status' => 'active',
     ]);
 
     Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->rotinaQueuesUser->id,
-            'email' => $this->rotinaQueuesUser->email,
-        ], 200),
-    ]);
-
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withHeader('X-Tenant', $this->rotinaQueuesTenantA);
-    $this->withToken('valid-rotina-queues-token');
+    $this->actingAs($this->rotinaQueuesUser->fresh(), 'web');
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     $control = rotinaQueuesControlConnection();
     $control->exec('DROP DATABASE IF EXISTS "'.$this->rotinaQueuesDatabaseA.'" WITH (FORCE)');
     $control->exec('DROP DATABASE IF EXISTS "'.$this->rotinaQueuesDatabaseB.'" WITH (FORCE)');
@@ -244,19 +222,19 @@ it('não materializa coleta nem análise no modo apenas resultado', function () 
         ->assertExactJson(['enabled' => false, 'data' => []]);
 });
 
-it('isola filas entre bancos físicos de tenants autorizados', function () {
+it('isola filas entre usuários de laboratórios diferentes', function () {
     $pdoA = rotinaQueuesControlConnection($this->rotinaQueuesDatabaseA);
     $pdoB = rotinaQueuesControlConnection($this->rotinaQueuesDatabaseB);
     rotinaQueuesCreateExame($pdoA, 'Paciente Tenant A');
     rotinaQueuesCreateExame($pdoB, 'Paciente Tenant B');
 
-    $this->withHeader('X-Tenant', $this->rotinaQueuesTenantA)
+    $this->withHeader('X-Tenant', $this->rotinaQueuesLaboratoryA)
         ->getJson('/api/rotina/coleta')
         ->assertOk()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.paciente_nome', 'Paciente Tenant A');
 
-    $this->withHeader('X-Tenant', $this->rotinaQueuesTenantB)
+    $this->actingAs($this->rotinaQueuesUserB, 'web')
         ->getJson('/api/rotina/coleta')
         ->assertOk()
         ->assertJsonCount(1, 'data')
@@ -264,10 +242,11 @@ it('isola filas entre bancos físicos de tenants autorizados', function () {
 });
 
 it('exige visualizar atendimentos nas duas filas', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->rotinaQueuesUser->getKey())
-        ->where('tenant_id', $this->rotinaQueuesTenantA)
+    DB::connection('central')->table('users')
+        ->where('id', $this->rotinaQueuesUser->getKey())
+        ->where('laboratory_id', $this->rotinaQueuesLaboratoryA)
         ->update(['permissions_revoked' => json_encode(['visualizar_atendimentos'])]);
+    $this->actingAs($this->rotinaQueuesUser->fresh(), 'web');
 
     $this->getJson('/api/rotina/coleta')->assertForbidden();
     $this->getJson('/api/rotina/analise')->assertForbidden();

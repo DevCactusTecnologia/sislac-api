@@ -13,15 +13,15 @@ beforeEach(function () {
     config()->set('services.supabase.publishable_key', 'test-publishable-key');
 });
 
-it('não aceita sessão Laravel como autenticação clínica de Atendimentos', function () {
+it('exige laboratório após autenticar a sessão Laravel', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user, 'web')
         ->getJson('/api/atendimentos')
-        ->assertUnauthorized();
+        ->assertForbidden();
 });
 
-it('aceita Bearer Supabase como identidade antes de validar membership do laboratório', function () {
+it('rejeita Bearer Supabase nas rotas clínicas migradas', function () {
     $user = User::factory()->create();
 
     Http::fake([
@@ -33,5 +33,7 @@ it('aceita Bearer Supabase como identidade antes de validar membership do labora
 
     $this->withToken('valid-atendimentos-token')
         ->getJson('/api/atendimentos')
-        ->assertForbidden();
+        ->assertUnauthorized();
+
+    Http::assertNothingSent();
 });

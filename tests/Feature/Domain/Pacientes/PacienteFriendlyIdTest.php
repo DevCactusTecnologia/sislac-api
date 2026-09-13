@@ -2,7 +2,7 @@
 
 use App\Domain\Pacientes\Models\Paciente;
 use App\Domain\Pacientes\Services\PacienteFriendlyId;
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -15,11 +15,11 @@ beforeEach(function () {
     $this->friendlyDatabase = 'sislac_t_friendly_'.Str::lower(Str::random(10));
     pacienteFriendlyControlConnection()->exec('CREATE DATABASE "'.$this->friendlyDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Friendly ID',
         'code' => 'friendly-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -28,8 +28,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->friendlyTenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($this->friendlyTenant);
+    $this->friendlyLaboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($this->friendlyLaboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -39,11 +39,9 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     pacienteFriendlyControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->friendlyDatabase.'" WITH (FORCE)');
 });
 

@@ -1,6 +1,6 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -12,11 +12,11 @@ beforeEach(function () {
     $this->caixaSchemaDatabase = 'sislac_t_caixa_schema_'.Str::lower(Str::random(7));
     caixaSchemaControlConnection()->exec('CREATE DATABASE "'.$this->caixaSchemaDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Schema Caixa',
         'code' => 'caixa-schema-'.Str::lower(Str::random(6)),
         'status' => 'active',
@@ -25,8 +25,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $tenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($tenant);
+    $laboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($laboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -34,15 +34,13 @@ beforeEach(function () {
         '--force' => true,
     ]);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     caixaSchemaControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->caixaSchemaDatabase.'" WITH (FORCE)');
 });
 

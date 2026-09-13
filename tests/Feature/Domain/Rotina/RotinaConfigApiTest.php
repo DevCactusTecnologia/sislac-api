@@ -1,6 +1,6 @@
 <?php
 
-use App\Platform\Models\Tenant;
+use App\Models\Laboratory;
 use App\Platform\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,11 +15,11 @@ beforeEach(function () {
     $this->rotinaConfigDatabase = 'sislac_t_rotcfg_'.Str::lower(Str::random(9));
     rotinaConfigControlConnection()->exec('CREATE DATABASE "'.$this->rotinaConfigDatabase.'"');
 
-    $tenantId = (string) Str::uuid();
+    $laboratoryId = (string) Str::uuid();
     $now = now();
 
-    DB::connection('central')->table('tenants')->insert([
-        'id' => $tenantId,
+    createTestLaboratory([
+        'id' => $laboratoryId,
         'name' => 'Laboratório Config Rotina',
         'code' => 'rotcfg-'.Str::lower(Str::random(8)),
         'status' => 'active',
@@ -28,8 +28,8 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $tenant = Tenant::query()->findOrFail($tenantId);
-    tenancy()->initialize($tenant);
+    $laboratory = Laboratory::query()->findOrFail($laboratoryId);
+    connectTestLaboratory($laboratory);
 
     Artisan::call('migrate', [
         '--path' => database_path('migrations/tenant'),
@@ -37,12 +37,12 @@ beforeEach(function () {
         '--force' => true,
     ]);
 
-    tenancy()->end();
+    disconnectTestLaboratory();
 
     $this->rotinaConfigUser = User::factory()->create();
-    DB::connection('central')->table('memberships')->insert([
+    assignTestLaboratoryUser([
         'user_id' => $this->rotinaConfigUser->getKey(),
-        'tenant_id' => $tenantId,
+        'tenant_id' => $laboratoryId,
         'role' => 'admin',
         'status' => 'active',
         'permissions_extra' => '[]',
@@ -51,28 +51,17 @@ beforeEach(function () {
         'updated_at' => $now,
     ]);
 
-    $this->rotinaConfigTenantId = $tenantId;
+    $this->rotinaConfigLaboratoryId = $laboratoryId;
 
     Http::preventStrayRequests();
-    config()->set('services.supabase.url', 'https://example.supabase.co');
-    config()->set('services.supabase.publishable_key', 'test-publishable-key');
-    Http::fake([
-        'https://example.supabase.co/auth/v1/user' => Http::response([
-            'id' => $this->rotinaConfigUser->id,
-            'email' => $this->rotinaConfigUser->email,
-        ], 200),
-    ]);
-
     $this->withHeader('Origin', 'https://sislac.com.br');
-    $this->withToken('valid-rotina-token');
+    $this->actingAs($this->rotinaConfigUser->fresh(), 'web');
 });
 
 afterEach(function () {
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
+    disconnectTestLaboratory();
 
-    DB::purge('tenant');
+    DB::purge('lab');
     rotinaConfigControlConnection()->exec('DROP DATABASE IF EXISTS "'.$this->rotinaConfigDatabase.'" WITH (FORCE)');
 });
 
@@ -155,10 +144,11 @@ it('lê o modo completo padrão para usuário autenticado do tenant', function (
 });
 
 it('exige configuracoes sistema para alterar o modo', function () {
-    DB::connection('central')->table('memberships')
-        ->where('user_id', $this->rotinaConfigUser->getKey())
-        ->where('tenant_id', $this->rotinaConfigTenantId)
+    DB::connection('central')->table('users')
+        ->where('id', $this->rotinaConfigUser->getKey())
+        ->where('laboratory_id', $this->rotinaConfigLaboratoryId)
         ->update(['role' => 'recepcionista']);
+    $this->actingAs($this->rotinaConfigUser->fresh(), 'web');
 
     $this->patchJson('/api/rotina/config', ['rotina_fluxo_modo' => 'coleta_resultado'])
         ->assertForbidden();
